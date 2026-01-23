@@ -1,6 +1,6 @@
 import React from 'react';
 
-export default function MeasurementDisplay({ polylines, totalLength, exportLoading, onExport }) {
+export default function MeasurementDisplay({ polylines, totalLength, exportLoading, onExport, projectPageCount = 1, currentPage = 1 }) {
   return (
     <div className="bg-white rounded-lg shadow p-6">
       <h3 className="text-lg font-semibold mb-4">Measurements</h3>
@@ -51,6 +51,14 @@ export default function MeasurementDisplay({ polylines, totalLength, exportLoadi
                 className="button-primary flex-1 disabled:opacity-50 text-sm"
               >
                 {exportLoading ? 'Exporting...' : 'Export JSON'}
+              </button>
+              <button
+                onClick={() => onExport('pdf')}
+                disabled={exportLoading}
+                className="button-primary flex-1 disabled:opacity-50 text-sm"
+                title={`Export annotated PDF of page ${currentPage}`}
+              >
+                {exportLoading ? 'Exporting...' : '📄 Export PDF'}
               </button>
             </div>
           </div>

@@ -47,16 +47,17 @@ export default function ScaleCalibration({ projectId, pageNumber, onCalibrationS
     }
 
     setIsLoading(true);
+    let computedScaleFactor = null;
     try {
       const dx = calibrationPoints[1].x - calibrationPoints[0].x;
       const dy = calibrationPoints[1].y - calibrationPoints[0].y;
       const distancePdfUnits = Math.sqrt(dx * dx + dy * dy);
-      const scaleFactor = parseFloat(knownDistance) / distancePdfUnits;
+      computedScaleFactor = parseFloat(knownDistance) / distancePdfUnits;
 
       const calibrationData = {
         method: 'two_point',
         page_number: pageNumber,
-        scale_factor: scaleFactor,
+        scale_factor: computedScaleFactor,
         point_a: calibrationPoints[0],
         point_b: calibrationPoints[1],
         known_distance_ft: parseFloat(knownDistance),
@@ -65,18 +66,20 @@ export default function ScaleCalibration({ projectId, pageNumber, onCalibrationS
       await projectsAPI.createCalibration(projectId, calibrationData);
 
       toast.success('Scale calibration saved');
-      setSavedScaleFactor(scaleFactor);
-      setSavedScaleLabel(`${knownDistance} ft between points → ${scaleFactor.toFixed(6)} ft per PDF unit`);
+      setSavedScaleFactor(computedScaleFactor);
+      setSavedScaleLabel(`${knownDistance} ft between points → ${computedScaleFactor.toFixed(6)} ft per PDF unit`);
 
-      window.dispatchEvent(new CustomEvent('calibrationSaved', { detail: { points: calibrationPoints, scaleFactor } }));
+      window.dispatchEvent(new CustomEvent('calibrationSaved', { detail: { points: calibrationPoints, scaleFactor: computedScaleFactor } }));
 
       setCalibrationPoints([]);
       setKnownDistance('');
-      onCalibrationSuccess?.({ points: calibrationPoints, scaleFactor });
+      onCalibrationSuccess?.({ points: calibrationPoints, scaleFactor: computedScaleFactor });
     } catch (error) {
       toast.error(error.response?.data?.detail || 'Failed to save calibration');
     } finally {
-          onCalibrationSuccess?.({ points: calibrationPoints, scaleFactor });
+      if (computedScaleFactor !== null) {
+        onCalibrationSuccess?.({ points: calibrationPoints, scaleFactor: computedScaleFactor });
+      }
     }
   };
 

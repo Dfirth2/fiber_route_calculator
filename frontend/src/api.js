@@ -30,6 +30,36 @@ export const projectsAPI = {
     api.put(`/projects/${projectId}/polylines/${polylineId}`, data),
   deletePolyline: (projectId, polylineId) =>
     api.delete(`/projects/${projectId}/polylines/${polylineId}`),
+  
+  // Markers
+  createMarker: (projectId, marker) =>
+    api.post(`/projects/${projectId}/markers`, marker),
+  getMarkers: (projectId, pageNumber = null) => {
+    const params = pageNumber ? { page_number: pageNumber } : {};
+    return api.get(`/projects/${projectId}/markers`, { params });
+  },
+  deleteMarker: (projectId, markerId) =>
+    api.delete(`/projects/${projectId}/markers/${markerId}`),
+  
+  // Marker Links
+  createMarkerLink: (projectId, link) =>
+    api.post(`/projects/${projectId}/marker-links`, link),
+  getMarkerLinks: (projectId, pageNumber = null) => {
+    const params = pageNumber ? { page_number: pageNumber } : {};
+    return api.get(`/projects/${projectId}/marker-links`, { params });
+  },
+  deleteMarkerLink: (projectId, linkId) =>
+    api.delete(`/projects/${projectId}/marker-links/${linkId}`),
+  
+  // Conduits
+  createConduit: (projectId, conduit) =>
+    api.post(`/projects/${projectId}/conduits`, conduit),
+  getConduits: (projectId, pageNumber = null) => {
+    const params = pageNumber ? { page_number: pageNumber } : {};
+    return api.get(`/projects/${projectId}/conduits`, { params });
+  },
+  deleteConduit: (projectId, conduitId) =>
+    api.delete(`/projects/${projectId}/conduits/${conduitId}`),
 };
 
 // Exports API
@@ -44,6 +74,15 @@ export const exportsAPI = {
   exportJson: (projectId, slackFactor = null) => {
     const params = slackFactor ? { slack_factor: slackFactor } : {};
     return api.get(`/exports/${projectId}/json`, {
+      params,
+      responseType: 'blob',
+    });
+  },
+  exportPdf: (projectId, pageNumber = 1, pageWidth = null, pageHeight = null) => {
+    const params = { page_number: pageNumber };
+    if (pageWidth !== null) params.page_width = pageWidth;
+    if (pageHeight !== null) params.page_height = pageHeight;
+    return api.get(`/exports/${projectId}/pdf`, {
       params,
       responseType: 'blob',
     });
