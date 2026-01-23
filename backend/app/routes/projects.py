@@ -8,11 +8,14 @@ import shutil
 import uuid
 
 from app.db.database import get_db
-from app.models.database import Project, Polyline, ScaleCalibration
+from app.models.database import Project, Polyline, ScaleCalibration, Marker, MarkerLink, Conduit
 from app.models.schemas import (
     ProjectCreate, ProjectResponse, ProjectDetail,
     PolylineCreate, PolylineResponse,
     ScaleCalibration as ScaleCalibrationSchema,
+    MarkerCreate, MarkerResponse,
+    MarkerLinkCreate, MarkerLinkResponse,
+    ConduitCreate, ConduitResponse,
 )
 from app.services.geometry import (
     calculate_polyline_length_ft,
@@ -365,3 +368,210 @@ def delete_polyline(
     db.commit()
     
     return {"message": "Polyline deleted"}
+
+# Marker endpoints
+@router.post("/{project_id}/markers", response_model=MarkerResponse)
+def create_marker(
+    project_id: int,
+    marker: MarkerCreate,
+    db: Session = Depends(get_db),
+):
+    """Create a marker (terminal or drop pedestal)."""
+    project = db.query(Project).filter(Project.id == project_id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    
+    db_marker = Marker(
+        project_id=project_id,
+        page_number=marker.page_number,
+        marker_type=marker.marker_type,
+        x=marker.x,
+        y=marker.y,
+    )
+    db.add(db_marker)
+    db.commit()
+    db.refresh(db_marker)
+    return db_marker
+
+
+@router.get("/{project_id}/markers", response_model=List[MarkerResponse])
+def get_markers(
+    project_id: int,
+    page_number: int = None,
+    db: Session = Depends(get_db),
+):
+    """Get markers for a project, optionally filtered by page."""
+    project = db.query(Project).filter(Project.id == project_id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    
+    query = db.query(Marker).filter(Marker.project_id == project_id)
+    if page_number is not None:
+        query = query.filter(Marker.page_number == page_number)
+    
+    return query.all()
+
+
+@router.delete("/{project_id}/markers/{marker_id}")
+def delete_marker(
+    project_id: int,
+    marker_id: int,
+    db: Session = Depends(get_db),
+):
+    """Delete a marker."""
+    marker = db.query(Marker).filter(
+        Marker.id == marker_id,
+        Marker.project_id == project_id,
+    ).first()
+    
+    if not marker:
+        raise HTTPException(status_code=404, detail="Marker not found")
+    
+    db.delete(marker)
+    db.commit()
+    
+    return {"message": "Marker deleted"}
+
+
+# Marker Link endpoints
+@router.post("/{project_id}/marker-links", response_model=MarkerLinkResponse)
+def create_marker_link(
+    project_id: int,
+    link: MarkerLinkCreate,
+    db: Session = Depends(get_db),
+):
+    """Create a marker assignment link."""
+    marker = db.query(Marker).filter(
+        Marker.id == link.marker_id,
+        Marker.project_id == project_id,
+    ).first()
+    
+    if not marker:
+        raise HTTPException(status_code=404, detail="Marker not found")
+    
+    db_link = MarkerLink(
+        marker_id=link.marker_id,
+        page_number=link.page_number,
+        to_x=link.to_x,
+        to_y=link.to_y,
+    )
+    db.add(db_link)
+    db.commit()
+    db.refresh(db_link)
+    return db_link
+
+
+@router.get("/{project_id}/marker-links", response_model=List[MarkerLinkResponse])
+def get_marker_links(
+    project_id: int,
+    page_number: int = None,
+    db: Session = Depends(get_db),
+):
+    """Get marker links for a project, optionally filtered by page."""
+    project = db.query(Project).filter(Project.id == project_id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    
+    query = db.query(MarkerLink).join(Marker).filter(Marker.project_id == project_id)
+    if page_number is not None:
+        query = query.filter(MarkerLink.page_number == page_number)
+    
+    return query.all()
+
+
+@router.delete("/{project_id}/marker-links/{link_id}")
+def delete_marker_link(
+    project_id: int,
+    link_id: int,
+    db: Session = Depends(get_db),
+):
+    """Delete a marker link."""
+    link = db.query(MarkerLink).join(Marker).filter(
+        MarkerLink.id == link_id,
+        Marker.project_id == project_id,
+    ).first()
+    
+    if not link:
+        raise HTTPException(status_code=404, detail="Link not found")
+    
+    db.delete(link)
+    db.commit()
+    
+    return {"message": "Link deleted"}
+
+
+# Conduit endpoints
+@router.post("/{project_id}/conduits", response_model=ConduitResponse)
+def create_conduit(
+    project_id: int,
+    conduit: ConduitCreate,
+    db: Session = Depends(get_db),
+):
+    """Create a conduit connection between terminal and drop pedestal."""
+    project = db.query(Project).filter(Project.id == project_id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    
+    terminal = db.query(Marker).filter(
+        Marker.id == conduit.terminal_id,
+        Marker.project_id == project_id,
+    ).first()
+    
+    drop_ped = db.query(Marker).filter(
+        Marker.id == conduit.drop_ped_id,
+        Marker.project_id == project_id,
+    ).first()
+    
+    if not terminal or not drop_ped:
+        raise HTTPException(status_code=404, detail="Terminal or drop pedestal not found")
+    
+    db_conduit = Conduit(
+        project_id=project_id,
+        page_number=conduit.page_number,
+        terminal_id=conduit.terminal_id,
+        drop_ped_id=conduit.drop_ped_id,
+        footage=conduit.footage,
+    )
+    db.add(db_conduit)
+    db.commit()
+    db.refresh(db_conduit)
+    return db_conduit
+
+
+@router.get("/{project_id}/conduits", response_model=List[ConduitResponse])
+def get_conduits(
+    project_id: int,
+    page_number: int = None,
+    db: Session = Depends(get_db),
+):
+    """Get conduits for a project, optionally filtered by page."""
+    project = db.query(Project).filter(Project.id == project_id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    
+    query = db.query(Conduit).filter(Conduit.project_id == project_id)
+    if page_number is not None:
+        query = query.filter(Conduit.page_number == page_number)
+    
+    return query.all()
+
+
+@router.delete("/{project_id}/conduits/{conduit_id}")
+def delete_conduit(
+    project_id: int,
+    conduit_id: int,
+    db: Session = Depends(get_db),
+):
+    """Delete a conduit."""
+    conduit = db.query(Conduit).filter(
+        Conduit.id == conduit_id,
+        Conduit.project_id == project_id,
+    ).first()
+    
+    if not conduit:
+        raise HTTPException(status_code=404, detail="Conduit not found")
+    
+    db.delete(conduit)
+    db.commit()
+    
+    return {"message": "Conduit deleted"}

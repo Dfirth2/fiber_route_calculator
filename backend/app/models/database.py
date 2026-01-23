@@ -31,6 +31,8 @@ class Project(Base):
     owner = relationship("User", back_populates="projects")
     polylines = relationship("Polyline", back_populates="project", cascade="all, delete-orphan")
     scale_calibrations = relationship("ScaleCalibration", back_populates="project", cascade="all, delete-orphan")
+    markers = relationship("Marker", back_populates="project", cascade="all, delete-orphan")
+    conduits = relationship("Conduit", back_populates="project", cascade="all, delete-orphan")
 
 class ScaleCalibration(Base):
     __tablename__ = "scale_calibrations"
@@ -62,3 +64,49 @@ class Polyline(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     
     project = relationship("Project", back_populates="polylines")
+
+class Marker(Base):
+    __tablename__ = "markers"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    project_id = Column(Integer, ForeignKey("projects.id"))
+    page_number = Column(Integer)
+    marker_type = Column(String)  # "terminal" or "dropPed"
+    x = Column(Float)
+    y = Column(Float)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    project = relationship("Project", back_populates="markers")
+    links = relationship("MarkerLink", back_populates="marker", cascade="all, delete-orphan")
+    conduits_from = relationship("Conduit", foreign_keys="Conduit.terminal_id", back_populates="terminal")
+    conduits_to = relationship("Conduit", foreign_keys="Conduit.drop_ped_id", back_populates="drop_ped")
+
+class MarkerLink(Base):
+    __tablename__ = "marker_links"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    marker_id = Column(Integer, ForeignKey("markers.id"))
+    page_number = Column(Integer)
+    to_x = Column(Float)
+    to_y = Column(Float)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    marker = relationship("Marker", back_populates="links")
+
+class Conduit(Base):
+    __tablename__ = "conduits"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    project_id = Column(Integer, ForeignKey("projects.id"))
+    page_number = Column(Integer)
+    terminal_id = Column(Integer, ForeignKey("markers.id"))
+    drop_ped_id = Column(Integer, ForeignKey("markers.id"))
+    footage = Column(Float)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    project = relationship("Project", back_populates="conduits")
+    terminal = relationship("Marker", foreign_keys=[terminal_id], back_populates="conduits_from")
+    drop_ped = relationship("Marker", foreign_keys=[drop_ped_id], back_populates="conduits_to")

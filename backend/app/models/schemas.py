@@ -40,6 +40,44 @@ class PolylineResponse(PolylineCreate):
     created_at: datetime
     updated_at: datetime
 
+# Marker schemas
+class MarkerCreate(BaseModel):
+    page_number: int
+    marker_type: str  # "terminal" or "dropPed"
+    x: float
+    y: float
+
+class MarkerResponse(MarkerCreate):
+    id: int
+    project_id: int
+    created_at: datetime
+    updated_at: datetime
+
+# Marker Link schemas
+class MarkerLinkCreate(BaseModel):
+    marker_id: int
+    page_number: int
+    to_x: float
+    to_y: float
+
+class MarkerLinkResponse(MarkerLinkCreate):
+    id: int
+    created_at: datetime
+    updated_at: datetime
+
+# Conduit schemas
+class ConduitCreate(BaseModel):
+    page_number: int
+    terminal_id: int
+    drop_ped_id: int
+    footage: float
+
+class ConduitResponse(ConduitCreate):
+    id: int
+    project_id: int
+    created_at: datetime
+    updated_at: datetime
+
 # Project schemas
 class ProjectCreate(BaseModel):
     name: str
