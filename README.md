@@ -1,5 +1,5 @@
 # Fiber Route Plat Designer
-By Dayne Firth II
+BY dfirth2
 
 A web application for measuring fiber routes from subdivision plats. Upload a PDF plat, calibrate the scale, trace fiber paths, and export accurate footage calculations for network design documentation.
 
