@@ -1,9 +1,9 @@
 # Fiber Route Plat Designer
-Bf Dayne Firth II
+BY Dayne Firth II
 
 A web application for measuring fiber routes from subdivision plats. Upload a PDF plat, calibrate the scale, trace fiber paths, and export accurate footage calculations for network design documentation.
 
-## What this app does (short version)
+## What this app does
 - Upload subdivision plat PDFs and browse pages.
 - Calibrate scale by clicking two points and entering the real-world distance.
 - Draw fiber routes on top of the PDF with undo/clear and save per route.
@@ -18,4 +18,4 @@ A web application for measuring fiber routes from subdivision plats. Upload a PD
 - Backend fixes for route saving (SQLAlchemy func import/usage) and updated deployment docs.
 
 
-##Requirement
+## Requirments
