@@ -1,0 +1,69 @@
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:16-alpine
+    container_name: fiber_calculator_db
+    environment:
+      POSTGRES_USER: fiber_user
+      POSTGRES_PASSWORD: fiber_password
+      POSTGRES_DB: fiber_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U fiber_user -d fiber_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - fiber_network
+
+  # FastAPI Backend
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: fiber_calculator_api
+    command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+    ports:
+      - "8000:8000"
+    environment:
+      DATABASE_URL: postgresql://fiber_user:fiber_password@postgres:5432/fiber_db
+      SECRET_KEY: "change-this-in-production"
+      CORS_ORIGINS: "http://localhost:3000,http://localhost:8000"
+      UPLOAD_DIR: "/tmp/fiber_uploads"
+    volumes:
+      - ./backend:/app
+      - /app/__pycache__
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - fiber_network
+
+  # React Frontend
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        VITE_API_URL: "http://localhost:8000/api"
+    container_name: fiber_calculator_web
+    ports:
+      - "3000:3000"
+    environment:
+      - VITE_API_URL=http://localhost:8000/api
+    volumes:
+      - ./frontend/src:/app/src
+    depends_on:
+      - backend
+    networks:
+      - fiber_network
+
+volumes:
+  postgres_data:
+
+networks:
+  fiber_network:
+    driver: bridge

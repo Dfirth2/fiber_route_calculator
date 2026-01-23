@@ -1,0 +1,50 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: fiber_stage_db
+    environment:
+      POSTGRES_USER: fiber_user
+      POSTGRES_PASSWORD: fiber_password
+      POSTGRES_DB: fiber_db
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - fiber_network
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: fiber_stage_api
+    command: uvicorn main:app --host 0.0.0.0 --port 8000 --workers 2
+    environment:
+      DATABASE_URL: postgresql://fiber_user:fiber_password@postgres:5432/fiber_db
+      SECRET_KEY: ${SECRET_KEY}
+      CORS_ORIGINS: ${CORS_ORIGINS}
+      UPLOAD_DIR: /data/uploads
+    volumes:
+      - uploads:/data/uploads
+    depends_on:
+      - postgres
+    networks:
+      - fiber_network
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.prod
+    container_name: fiber_stage_web
+    depends_on:
+      - backend
+    networks:
+      - fiber_network
+    ports:
+      - "8080:80" # Staging on host port 8080
+
+volumes:
+  postgres_data:
+  uploads:
+
+networks:
+  fiber_network:
+    driver: bridge
