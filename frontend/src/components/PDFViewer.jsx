@@ -107,9 +107,21 @@ export default function PDFViewer({ pdfFile, pdfUrl, onPageChange, onCanvasReady
       
       await renderTask.promise;
       console.log('Page rendered successfully');
+      console.log('Page view (original dimensions):', page.view);
+      console.log('Viewport dimensions:', viewport.width, 'x', viewport.height, 'scale:', viewport.scale);
       
       if (onCanvasReady) {
-        onCanvasReady(canvas, viewport);
+        // Pass viewport - use viewport dimensions at scale 1.0 for PDF coordinates
+        // The viewport dimensions already account for rotation
+        const baseViewport = page.getViewport({ scale: 1.0 });
+        const pageWithDims = {
+          scale: viewport.scale, // Explicitly pass the scale
+          pageWidth: baseViewport.width,
+          pageHeight: baseViewport.height,
+        };
+        console.log('Passing to canvas - pageWidth:', pageWithDims.pageWidth, 'pageHeight:', pageWithDims.pageHeight, 'scale:', pageWithDims.scale);
+        console.log('Base viewport (scale 1.0):', baseViewport.width, 'x', baseViewport.height);
+        onCanvasReady(canvas, pageWithDims);
       }
     } catch (error) {
       if (error.name === 'RenderingCancelledException') {
