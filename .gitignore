@@ -33,3 +33,6 @@ ENV/
 
 #uploads
 uploads/*
+# PDF.js auto-generated assets
+frontend-angular/src/assets/cmaps/
+frontend-angular/src/assets/additional-locale/
