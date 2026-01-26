@@ -1,6 +1,6 @@
 from sqlalchemy import Column, Integer, String, Float, DateTime, ForeignKey, JSON, Text
 from sqlalchemy.orm import relationship
-from datetime import datetime
+from datetime import datetime, timezone
 from app.db.database import Base
 
 class User(Base):
@@ -10,7 +10,7 @@ class User(Base):
     username = Column(String, unique=True, index=True)
     email = Column(String, unique=True, index=True)
     hashed_password = Column(String)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     
     projects = relationship("Project", back_populates="owner")
 
@@ -25,8 +25,8 @@ class Project(Base):
     pdf_s3_key = Column(String, nullable=True)
     total_length_ft = Column(Float, default=0.0)
     page_count = Column(Integer, default=1)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
     
     owner = relationship("User", back_populates="projects")
     polylines = relationship("Polyline", back_populates="project", cascade="all, delete-orphan")
@@ -46,7 +46,7 @@ class ScaleCalibration(Base):
     point_a = Column(JSON, nullable=True)  # {x: float, y: float}
     point_b = Column(JSON, nullable=True)  # {x: float, y: float}
     known_distance_ft = Column(Float, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     
     project = relationship("Project", back_populates="scale_calibrations")
 
@@ -60,7 +60,7 @@ class Polyline(Base):
     page_number = Column(Integer)
     points = Column(JSON)  # [{x: float, y: float}, ...]
     length_ft = Column(Float, default=0.0)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     
     project = relationship("Project", back_populates="polylines")
@@ -74,8 +74,8 @@ class Marker(Base):
     marker_type = Column(String)  # "terminal" or "dropPed"
     x = Column(Float)
     y = Column(Float)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
     
     project = relationship("Project", back_populates="markers")
     links = relationship("MarkerLink", back_populates="marker", cascade="all, delete-orphan")
@@ -90,8 +90,8 @@ class MarkerLink(Base):
     page_number = Column(Integer)
     to_x = Column(Float)
     to_y = Column(Float)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
     
     marker = relationship("Marker", back_populates="links")
 
