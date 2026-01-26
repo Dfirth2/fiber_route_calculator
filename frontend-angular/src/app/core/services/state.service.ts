@@ -54,6 +54,16 @@ export interface MarkerLink {
   page_number: number;
 }
 
+export interface Assignment {
+  id: number;
+  project_id: number;
+  from_marker_id: number;
+  to_x: number;
+  to_y: number;
+  page_number: number;
+  color?: string;
+}
+
 @Injectable({
   providedIn: 'root'
 })
@@ -63,6 +73,7 @@ export class StateService {
   private polylinesSubject = new BehaviorSubject<Polyline[]>([]);
   private conduitSubject = new BehaviorSubject<Conduit[]>([]);
   private markerLinksSubject = new BehaviorSubject<MarkerLink[]>([]);
+  private assignmentsSubject = new BehaviorSubject<Assignment[]>([]);
   private scaleCalibrationSubject = new BehaviorSubject<ScaleCalibration | null>(null);
 
   project$ = this.projectSubject.asObservable();
@@ -70,6 +81,7 @@ export class StateService {
   polylines$ = this.polylinesSubject.asObservable();
   conduits$ = this.conduitSubject.asObservable();
   markerLinks$ = this.markerLinksSubject.asObservable();
+  assignments$ = this.assignmentsSubject.asObservable();
   scaleCalibration$ = this.scaleCalibrationSubject.asObservable();
 
   setProject(project: Project) {
@@ -114,5 +126,23 @@ export class StateService {
 
   setScaleCalibration(calibration: ScaleCalibration) {
     this.scaleCalibrationSubject.next(calibration);
+  }
+
+  setAssignments(assignments: Assignment[]) {
+    this.assignmentsSubject.next(assignments);
+  }
+
+  addAssignment(assignment: Assignment) {
+    const current = this.assignmentsSubject.value;
+    this.assignmentsSubject.next([...current, assignment]);
+  }
+
+  removeAssignment(assignmentId: number) {
+    const current = this.assignmentsSubject.value;
+    this.assignmentsSubject.next(current.filter(a => a.id !== assignmentId));
+  }
+
+  clearAssignments() {
+    this.assignmentsSubject.next([]);
   }
 }

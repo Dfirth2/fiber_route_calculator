@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from app.config import settings
 from app.db.database import Base, engine
-from app.routes import projects, exports
+from app.routes import projects, exports, assignments
 
 # Create database tables
 Base.metadata.create_all(bind=engine)
@@ -27,6 +27,7 @@ app.add_middleware(
 # Include routes
 app.include_router(projects.router)
 app.include_router(exports.router)
+app.include_router(assignments.router)
 
 @app.get("/")
 def root():
