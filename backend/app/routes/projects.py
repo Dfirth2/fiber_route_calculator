@@ -39,6 +39,11 @@ def create_project(
 ):
     """Create a new project with a PDF upload."""
     
+    # Enforce unique project names (case-insensitive)
+    existing = db.query(Project).filter(func.lower(Project.name) == name.lower()).first()
+    if existing:
+        raise HTTPException(status_code=400, detail="Project name already exists")
+
     # Generate unique filename to avoid conflicts
     file_ext = os.path.splitext(pdf_file.filename)[1]
     unique_filename = f"{uuid.uuid4()}{file_ext}"
@@ -231,6 +236,16 @@ def create_scale_calibration(
     
     db.commit()
     return calibration
+
+@router.get("/{project_id}/polylines", response_model=List[PolylineResponse])
+def get_polylines(project_id: int, db: Session = Depends(get_db)):
+    """Get all polylines for a project."""
+    project = db.query(Project).filter(Project.id == project_id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    
+    polylines = db.query(Polyline).filter(Polyline.project_id == project_id).all()
+    return polylines
 
 @router.post("/{project_id}/polylines", response_model=PolylineResponse)
 def create_polyline(
@@ -524,6 +539,14 @@ def create_conduit(
     
     if not terminal or not drop_ped:
         raise HTTPException(status_code=404, detail="Terminal or drop pedestal not found")
+
+    # Validate endpoint types: must be (terminal -> dropPed) or (dropPed -> dropPed)
+    if drop_ped.marker_type != 'dropPed':
+        raise HTTPException(status_code=400, detail="drop_ped_id must reference a drop pedestal marker")
+    if terminal.marker_type == 'terminal' and drop_ped.marker_type == 'terminal':
+        raise HTTPException(status_code=400, detail="Conduit cannot connect terminal to terminal")
+    if terminal.marker_type not in ['terminal', 'dropPed']:
+        raise HTTPException(status_code=400, detail="terminal_id must reference a terminal or drop pedestal marker")
     
     db_conduit = Conduit(
         project_id=project_id,

@@ -31,10 +31,12 @@ services:
     environment:
       DATABASE_URL: postgresql://fiber_user:fiber_password@postgres:5432/fiber_db
       SECRET_KEY: "change-this-in-production"
-      CORS_ORIGINS: "http://localhost:3000,http://localhost:8000"
+      CORS_ORIGINS: "http://localhost:3000,http://localhost:8000,http://piwebhost.local:3000"
       UPLOAD_DIR: "/tmp/fiber_uploads"
+      PYTHONPATH: "/app"
     volumes:
       - ./backend:/app
+      - ./uploads:/tmp/fiber_uploads
       - /app/__pycache__
     depends_on:
       postgres:
@@ -42,20 +44,18 @@ services:
     networks:
       - fiber_network
 
-  # React Frontend
+  # Angular Frontend
   frontend:
     build:
-      context: ./frontend
+      context: ./frontend-angular
       dockerfile: Dockerfile
-      args:
-        VITE_API_URL: "http://localhost:8000/api"
     container_name: fiber_calculator_web
     ports:
-      - "3000:3000"
+      - "3000:4200"  # Expose Angular dev server on external 3000
     environment:
-      - VITE_API_URL=http://localhost:8000/api
+      - API_URL=http://localhost:8000/api
     volumes:
-      - ./frontend/src:/app/src
+      - ./frontend-angular/src:/app/src
     depends_on:
       - backend
     networks:

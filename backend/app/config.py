@@ -1,13 +1,18 @@
 import os
 from typing import List, Union
 from pydantic import field_validator
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
+    model_config: SettingsConfigDict = SettingsConfigDict(env_file=".env")
+    # Environment
+    ENVIRONMENT: str = os.getenv("ENVIRONMENT", "development")
+    
     # Database
     DATABASE_URL: str = os.getenv(
         "DATABASE_URL",
-        "postgresql://fiber_user:fiber_password@localhost:5432/fiber_db"
+        "sqlite:///./fiber_db.sqlite" if os.getenv("ENVIRONMENT", "development") == "development" 
+        else "postgresql://fiber_user:fiber_password@localhost:5432/fiber_db"
     )
     
     # JWT
@@ -20,7 +25,7 @@ class Settings(BaseSettings):
     MAX_UPLOAD_SIZE: int = 500 * 1024 * 1024  # 500MB
     
     # CORS - can be a JSON array string or comma-separated string
-    CORS_ORIGINS: Union[List[str], str] = "http://localhost:3000,http://localhost:8000,http://localhost:5173"
+    CORS_ORIGINS: Union[List[str], str] = "http://localhost:3000,http://localhost:8000,http://localhost:5173,http://piwebhost.local:3000"
     
     @field_validator('CORS_ORIGINS', mode='before')
     @classmethod
@@ -28,8 +33,4 @@ class Settings(BaseSettings):
         if isinstance(v, str):
             return [origin.strip() for origin in v.split(',')]
         return v
-    
-    class Config:
-        env_file = ".env"
-
 settings = Settings()

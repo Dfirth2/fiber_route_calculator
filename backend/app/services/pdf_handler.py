@@ -1,17 +1,17 @@
 import os
 from typing import Tuple
 try:
-    import PyPDF2
+    import pypdf
 except ImportError:
-    PyPDF2 = None
+    pypdf = None
 
 def get_pdf_page_count(pdf_path: str) -> int:
     """Get total page count from PDF file."""
-    if not PyPDF2:
-        raise ImportError("PyPDF2 is required for PDF handling")
+    if not pypdf:
+        raise ImportError("pypdf is required for PDF handling")
     
     with open(pdf_path, 'rb') as file:
-        reader = PyPDF2.PdfReader(file)
+        reader = pypdf.PdfReader(file)
         return len(reader.pages)
 
 def validate_pdf_file(file_path: str) -> Tuple[bool, str]:
@@ -27,12 +27,12 @@ def validate_pdf_file(file_path: str) -> Tuple[bool, str]:
     if not file_path.lower().endswith('.pdf'):
         return False, "File is not a PDF"
     
-    if not PyPDF2:
-        return True, "PyPDF2 not available - skipping PDF validation"
+    if not pypdf:
+        return True, "pypdf not available - skipping PDF validation"
     
     try:
         with open(file_path, 'rb') as f:
-            reader = PyPDF2.PdfReader(f)
+            reader = pypdf.PdfReader(f)
             if not reader.pages:
                 return False, "PDF has no pages"
         return True, "Valid PDF"
@@ -41,12 +41,12 @@ def validate_pdf_file(file_path: str) -> Tuple[bool, str]:
 
 def get_pdf_info(pdf_path: str) -> dict:
     """Get detailed information about a PDF file."""
-    if not PyPDF2:
-        raise ImportError("PyPDF2 is required for PDF handling")
+    if not pypdf:
+        raise ImportError("pypdf is required for PDF handling")
     
     try:
         with open(pdf_path, 'rb') as f:
-            reader = PyPDF2.PdfReader(f)
+            reader = pypdf.PdfReader(f)
             
             page_count = len(reader.pages)
             page_sizes = []

@@ -30,5 +30,40 @@ A web application for measuring fiber routes from subdivision plats. Upload a PD
 - Frontend now passes page dimensions to backend for accurate overlay rendering
 - All markers, routes, conduits, and annotations now export at exact positions
 
+## Update 3
+- **Frontend Migration**: Converted from React to Angular 21.1.1
+  - Angular standalone components with TypeScript 5.2.0
+  - Integrated Tailwind CSS for consistent styling
+  - Updated module resolution to "bundler" for Angular 21 ESM compatibility
+  - Successfully compiling and serving on port 3000 (mapped from Angular dev server on port 4200)
+- **Backend Updates**: 
+  - Migrated from deprecated PyPDF2 to pypdf 5.1.0
+  - Updated SQLAlchemy to >=2.0.25 with proper declarative_base imports
+  - Updated pydantic to >=2.10.0 with ConfigDict for settings
+  - Updated Pillow to >=11.0.0 for Python 3.13 compatibility
+  - Fixed timezone-aware datetime defaults for database models
+  - Added pytest.ini to filter third-party deprecation warnings
+  - All tests passing with zero warnings on Python 3.13
+  - Added dual database support: SQLite for development, PostgreSQL for production
+  - Environment-based configuration with automatic database selection
+- **Project Management Enhancements**:
+  - Projects now display in clean table layout with name, footage, and actions
+  - Project name is clickable link to editor
+  - Auto-navigation to editor after project creation
+  - Auto-refresh project list when returning from editor
+  - Delete confirmation with loading overlay and table refresh
+  - Loading states for all async operations
+- **Calibration Improvements**:
+  - Calibration now strictly project-specific (stored in database only)
+  - Removed localStorage fallback to prevent cross-project contamination
+  - Each project requires its own calibration
+  - Mode automatically switches to 'pan' after successful calibration
+  - Clear user prompts when calibration is required
+- **Infrastructure**:
+  - Updated docker-compose.yml to use frontend-angular instead of React frontend
+  - Fixed Angular Docker configuration with proper dev server binding (--host 0.0.0.0)
+  - Angular app successfully compiles with no TypeScript errors
+  - Refactored large inline templates to separate HTML files for better maintainability
+
 ## Requirments
 

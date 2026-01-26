@@ -1,0 +1,97 @@
+<div class="flex flex-col h-full w-full">
+  <!-- Toolbar -->
+  <div class="bg-white border-b shadow flex flex-col gap-2 p-3">
+    <div class="flex flex-wrap gap-2">
+      <div class="flex gap-1 items-center">
+        <button (click)="prevPage()" [disabled]="currentPage <= 1" class="px-3 py-1 bg-gray-200 rounded hover:bg-gray-300 disabled:opacity-50">&lt;</button>
+        <span class="px-3 py-1 text-sm whitespace-nowrap">Page {{ currentPage }} / {{ pdf?.numPages || 1 }}</span>
+        <button (click)="nextPage()" [disabled]="currentPage >= (pdf?.numPages || 1)" class="px-3 py-1 bg-gray-200 rounded hover:bg-gray-300 disabled:opacity-50">&gt;</button>
+      </div>
+      <div class="flex gap-1 items-center">
+        <button (click)="zoomOut()" class="px-3 py-1 bg-gray-200 rounded hover:bg-gray-300">−</button>
+        <span class="px-3 py-1 text-sm w-16 text-center">{{ Math.round(zoom * 100) }}%</span>
+        <button (click)="zoomIn()" class="px-3 py-1 bg-gray-200 rounded hover:bg-gray-300">+</button>
+      </div>
+      <div class="border-l"></div>
+      <button (click)="setMode('pan')" [class.bg-blue-600]="mode==='pan'" [class.text-white]="mode==='pan'" class="px-3 py-1 rounded border">Pan</button>
+      
+      <!-- Calibration Menu -->
+      <div class="relative">
+        <button (click)="showCalibrationMenu = !showCalibrationMenu"
+          class="px-3 py-1 rounded border hover:bg-gray-100">Calibration ▼</button>
+        <div *ngIf="showCalibrationMenu" class="absolute top-full mt-1 bg-white border rounded shadow z-10 w-40">
+          <button (click)="setMode('calibrate'); showCalibrationMenu = false"
+            [class.bg-blue-600]="mode==='calibrate'"
+            [class.text-white]="mode==='calibrate'"
+            class="block w-full text-left px-4 py-2 hover:bg-gray-100 border-b">Calibrate</button>
+          <button (click)="clearCalibration(); showCalibrationMenu = false" *ngIf="scaleFeetPerPixel"
+            class="block w-full text-left px-4 py-2 hover:bg-gray-100 text-sm">Reset</button>
+        </div>
+      </div>
+      <button (click)="setMode('fiber')"
+        [disabled]="!scaleFeetPerPixel"
+        [class.bg-blue-600]="mode==='fiber'"
+        [class.text-white]="mode==='fiber'"
+        class="px-3 py-1 rounded border disabled:opacity-50 disabled:cursor-not-allowed">Draw Fiber</button>
+      <button (click)="saveFiber()" 
+        *ngIf="drawingPath.length > 0"
+        class="px-3 py-1 rounded border bg-green-600 text-white hover:bg-green-700">Save Fiber</button>
+      
+      <!-- Equipment Menu -->
+      <div class="relative">
+        <button (click)="showEquipmentMenu = !showEquipmentMenu"
+          [disabled]="!scaleFeetPerPixel"
+          class="px-3 py-1 rounded border disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-100">Equipment ▼</button>
+        <div *ngIf="showEquipmentMenu" class="absolute top-full mt-1 bg-white border rounded shadow z-10 w-40">
+          <button (click)="setMode('terminal'); showEquipmentMenu = false"
+            [class.bg-blue-600]="mode==='terminal'"
+            [class.text-white]="mode==='terminal'"
+            class="block w-full text-left px-4 py-2 hover:bg-gray-100 border-b">Terminal</button>
+          <button (click)="setMode('drop'); showEquipmentMenu = false"
+            [class.bg-blue-600]="mode==='drop'"
+            [class.text-white]="mode==='drop'"
+            class="block w-full text-left px-4 py-2 hover:bg-gray-100 border-b">Drop Pedestal</button>
+          <button (click)="setMode('conduit'); showEquipmentMenu = false"
+            [class.bg-blue-600]="mode==='conduit'"
+            [class.text-white]="mode==='conduit'"
+            class="block w-full text-left px-4 py-2 hover:bg-gray-100">Conduit</button>
+        </div>
+      </div>
+      <button (click)="cancelDrawing()" *ngIf="mode !== 'pan'" class="px-3 py-1 rounded border bg-gray-100 hover:bg-gray-200">Cancel</button>
+    </div>
+    <div class="text-xs text-gray-700 flex flex-wrap gap-x-4 gap-y-1">
+      <div *ngIf="!scaleFeetPerPixel">Calibrate: click two points on scale, enter real feet.</div>
+      <div *ngIf="scaleFeetPerPixel">Scale: {{ (scaleFeetPerPixel*12).toFixed(4) }} inches/px ({{ (scaleFeetPerPixel).toFixed(4) }} ft/px)</div>
+      <div>Fiber total: {{ totalLengthFeet.toFixed(1) }} ft</div>
+      <div>Conduit total: {{ totalConduitFeet.toFixed(1) }} ft</div>
+      <div>Markers: {{ terminals.length }} terminals, {{ drops.length }} drops</div>
+    </div>
+  </div>
+
+  <!-- PDF Viewer -->
+  <div
+    class="relative bg-gray-100 flex-1 overflow-hidden flex items-center justify-center"
+    (mousedown)="onMouseDown($event)"
+    (mousemove)="onMouseMove($event)"
+    (mouseup)="onMouseUp()"
+    (mouseleave)="onMouseUp()"
+  >
+    <div
+      #wrapper
+      class="transition-transform"
+      [style.transform]="getTransform()"
+      [style.transitionDuration]="isPanning ? '0ms' : '100ms'"
+    >
+      <canvas #pdfCanvas class="bg-white block" [style.cursor]="isPanning ? 'grabbing' : 'grab'"></canvas>
+      <canvas
+        #overlayCanvas
+        class="absolute inset-0 pointer-events-auto"
+        [style.cursor]="(mode === 'fiber' || mode === 'conduit' || mode === 'calibrate') ? 'crosshair' : 'auto'"
+      ></canvas>
+    </div>
+
+    <div *ngIf="toastMessage" class="absolute top-2 left-1/2 -translate-x-1/2 bg-rose-600 text-white px-4 py-2 rounded shadow text-sm pointer-events-none">
+      {{ toastMessage }}
+    </div>
+  </div>
+</div>

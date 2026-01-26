@@ -1,0 +1,131 @@
+import { Injectable } from '@angular/core';
+import { HttpClient, HttpParams } from '@angular/common/http';
+import { Observable } from 'rxjs';
+
+@Injectable({
+  providedIn: 'root'
+})
+export class ApiService {
+  private apiUrl = `${window.location.protocol}//${window.location.hostname}:8000/api`;
+
+  constructor(private http: HttpClient) {}
+
+  // Projects
+  getProjects(): Observable<any[]> {
+    return this.http.get<any[]>(`${this.apiUrl}/projects/`);
+  }
+
+  getProject(id: number): Observable<any> {
+    return this.http.get<any>(`${this.apiUrl}/projects/${id}/`);
+  }
+
+  createProject(name: string, file: File): Observable<any> {
+    const formData = new FormData();
+    formData.append('name', name);
+    formData.append('pdf_file', file);
+    return this.http.post<any>(`${this.apiUrl}/projects/`, formData);
+  }
+
+  deleteProject(id: number): Observable<any> {
+    return this.http.delete<any>(`${this.apiUrl}/projects/${id}/`);
+  }
+
+  // Markers
+  getMarkers(projectId: number): Observable<any[]> {
+    return this.http.get<any[]>(`${this.apiUrl}/projects/${projectId}/markers`);
+  }
+
+  addMarker(projectId: number, marker: any): Observable<any> {
+    return this.http.post<any>(`${this.apiUrl}/projects/${projectId}/markers`, marker);
+  }
+
+  deleteMarker(projectId: number, markerId: number): Observable<any> {
+    return this.http.delete<any>(`${this.apiUrl}/projects/${projectId}/markers/${markerId}`);
+  }
+
+  // Polylines
+  getPolylines(projectId: number): Observable<any[]> {
+    return this.http.get<any[]>(`${this.apiUrl}/projects/${projectId}/polylines`);
+  }
+
+  addPolyline(projectId: number, polyline: any): Observable<any> {
+    return this.http.post<any>(`${this.apiUrl}/projects/${projectId}/polylines`, polyline);
+  }
+
+  deletePolyline(projectId: number, polylineId: number): Observable<any> {
+    return this.http.delete<any>(`${this.apiUrl}/projects/${projectId}/polylines/${polylineId}`);
+  }
+
+  // Scale Calibrations
+  getScaleCalibrations(projectId: number): Observable<any[]> {
+    return this.http.get<any[]>(`${this.apiUrl}/projects/${projectId}/scale-calibrations`);
+  }
+
+  saveScaleCalibration(projectId: number, calibration: any): Observable<any> {
+    return this.http.post<any>(`${this.apiUrl}/projects/${projectId}/scale-calibrations`, calibration);
+  }
+
+  // Conduits
+  getConduits(projectId: number): Observable<any[]> {
+    return this.http.get<any[]>(`${this.apiUrl}/projects/${projectId}/conduits`);
+  }
+
+  addConduit(projectId: number, conduit: any): Observable<any> {
+    return this.http.post<any>(`${this.apiUrl}/projects/${projectId}/conduits`, conduit);
+  }
+
+  deleteConduit(projectId: number, conduitId: number): Observable<any> {
+    return this.http.delete<any>(`${this.apiUrl}/projects/${projectId}/conduits/${conduitId}`);
+  }
+
+  // Marker Links
+  getMarkerLinks(projectId: number): Observable<any[]> {
+    return this.http.get<any[]>(`${this.apiUrl}/projects/${projectId}/marker-links`);
+  }
+
+  addMarkerLink(projectId: number, link: any): Observable<any> {
+    return this.http.post<any>(`${this.apiUrl}/projects/${projectId}/marker-links`, link);
+  }
+
+  // PDF
+  getPdf(projectId: number): Observable<Blob> {
+    return this.http.get(`${this.apiUrl}/projects/${projectId}/pdf`, { responseType: 'blob' });
+  }
+
+  // Exports
+  exportCsv(projectId: number, slackFactor?: number): Observable<Blob> {
+    let params = new HttpParams();
+    if (slackFactor !== undefined) {
+      params = params.set('slack_factor', slackFactor.toString());
+    }
+    return this.http.get(`${this.apiUrl}/exports/${projectId}/csv`, {
+      params,
+      responseType: 'blob'
+    });
+  }
+
+  exportJson(projectId: number, slackFactor?: number): Observable<Blob> {
+    let params = new HttpParams();
+    if (slackFactor !== undefined) {
+      params = params.set('slack_factor', slackFactor.toString());
+    }
+    return this.http.get(`${this.apiUrl}/exports/${projectId}/json`, {
+      params,
+      responseType: 'blob'
+    });
+  }
+
+  exportPdf(projectId: number, pageNumber: number = 1, pageWidth?: number, pageHeight?: number): Observable<Blob> {
+    let params = new HttpParams().set('page_number', pageNumber.toString());
+    if (pageWidth !== undefined) {
+      params = params.set('page_width', pageWidth.toString());
+    }
+    if (pageHeight !== undefined) {
+      params = params.set('page_height', pageHeight.toString());
+    }
+    return this.http.get(`${this.apiUrl}/exports/${projectId}/pdf`, {
+      params,
+      responseType: 'blob'
+    });
+  }
+}

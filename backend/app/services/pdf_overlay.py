@@ -5,7 +5,7 @@ import io
 import math
 from typing import List, Dict
 from reportlab.pdfgen import canvas
-import PyPDF2
+from pypdf import PdfReader, PdfWriter
 
 
 def overlay_drawings_on_pdf(
@@ -36,8 +36,8 @@ def overlay_drawings_on_pdf(
     try:
         # Open and read original PDF
         with open(original_pdf_path, 'rb') as pdf_file:
-            pdf_reader = PyPDF2.PdfReader(pdf_file)
-            pdf_writer = PyPDF2.PdfWriter()
+            pdf_reader = PdfReader(pdf_file)
+            pdf_writer = PdfWriter()
             
             # Validate page number
             if page_number < 1 or page_number > len(pdf_reader.pages):
@@ -77,7 +77,7 @@ def overlay_drawings_on_pdf(
                         )
                         
                         # Merge overlay with page
-                        overlay_pdf = PyPDF2.PdfReader(io.BytesIO(overlay_bytes))
+                        overlay_pdf = PdfReader(io.BytesIO(overlay_bytes))
                         overlay_page = overlay_pdf.pages[0]
                         page.merge_page(overlay_page)
                     except Exception as e:
