@@ -2,6 +2,7 @@ import { Component, Input, OnChanges, OnInit, SimpleChanges, ViewChild, ElementR
 import { CommonModule } from '@angular/common';
 import * as pdfjsLib from 'pdfjs-dist';
 import { ApiService } from '../../core/services/api.service';
+import { StateService, Assignment } from '../../core/services/state.service';
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = '/assets/pdf.worker.min.mjs';
 
@@ -35,20 +36,25 @@ export class PDFViewerComponent implements OnInit, OnChanges {
   isPanning = false;
   Math = Math;
 
-  mode: 'pan' | 'calibrate' | 'fiber' | 'conduit' | 'terminal' | 'drop' = 'pan';
+  mode: 'pan' | 'calibrate' | 'fiber' | 'conduit' | 'terminal' | 'drop' | 'assign' | 'erase' = 'pan';
   calibrationPoints: { x: number; y: number }[] = [];
   scaleFeetPerPixel: number | null = null;
   drawingPath: { x: number; y: number }[] = [];
   hoverPoint: { x: number; y: number } | null = null;
   polylines: { points: { x: number; y: number }[]; lengthFt: number; type: 'fiber' | 'conduit' }[] = [];
+  conduitMetadata: { fromId: number; fromType: 'terminal' | 'drop'; toId: number; toType: 'terminal' | 'drop'; lengthFt: number }[] = [];
   totalLengthFeet = 0;
   totalConduitFeet = 0;
-  terminals: { x: number; y: number }[] = [];
-  drops: { x: number; y: number }[] = [];
+  terminals: { id: number; x: number; y: number }[] = [];
+  drops: { id: number; x: number; y: number }[] = [];
   selectedEndpoint: { point: { x: number; y: number }; type: 'terminal' | 'drop' } | null = null;
+  assignments: Assignment[] = [];
+  selectedMarkerForAssign: { id: number; x: number; y: number; type: 'terminal' | 'drop' } | null = null;
   toastMessage: string | null = null;
+  toastType: 'success' | 'error' | 'info' = 'info';
   showEquipmentMenu = false;
   showCalibrationMenu = false;
+  private assignmentsSubscribed = false;
   private toastTimer: any = null;
 
   private renderTask: any = null;
@@ -58,14 +64,20 @@ export class PDFViewerComponent implements OnInit, OnChanges {
   @Output() polylinesChanged = new EventEmitter<any[]>();
   @Output() terminalsChanged = new EventEmitter<any[]>();
   @Output() dropsChanged = new EventEmitter<any[]>();
+  @Output() conduitsChanged = new EventEmitter<any[]>();
 
-  constructor(private apiService: ApiService) {}
+  constructor(private apiService: ApiService, private stateService: StateService) {}
 
   async ngOnInit() {
     if (this.pdfUrl) {
       await this.loadPdf();
       this.loadCalibrationFromBackend();
-      this.loadDrawingData();
+      if (this.projectId) {
+        this.loadAssignments();
+        this.ensureAssignmentsSubscription();
+      } else {
+        this.loadDrawingData();
+      }
     }
   }
 
@@ -73,12 +85,18 @@ export class PDFViewerComponent implements OnInit, OnChanges {
     if (changes['pdfUrl'] && !changes['pdfUrl'].firstChange && this.pdfUrl) {
       this.loadPdf();
     }
-    if (changes['syncedTerminals'] && this.syncedTerminals) {
+    if (changes['projectId'] && this.projectId) {
+      this.loadCalibrationFromBackend();
+      this.loadMarkersFromBackend();
+      this.loadAssignments();
+      this.ensureAssignmentsSubscription();
+    }
+    if (changes['syncedTerminals'] && this.syncedTerminals && !this.projectId) {
       this.terminals = this.syncedTerminals;
       this.saveDrawingData();
       this.redrawOverlay();
     }
-    if (changes['syncedDrops'] && this.syncedDrops) {
+    if (changes['syncedDrops'] && this.syncedDrops && !this.projectId) {
       this.drops = this.syncedDrops;
       this.saveDrawingData();
       this.redrawOverlay();
@@ -105,8 +123,10 @@ export class PDFViewerComponent implements OnInit, OnChanges {
       this.currentPage = 1;
       this.panOffset = { x: 0, y: 0 };
       await this.renderPage();
-      // Don't load old localStorage data - use only backend
-      this.loadDrawingData();
+      // Only load local storage when no project backing store
+      if (!this.projectId) {
+        this.loadDrawingData();
+      }
     } catch (error) {
       console.error('Error loading PDF:', error);
     }
@@ -162,19 +182,36 @@ export class PDFViewerComponent implements OnInit, OnChanges {
     const y = event.clientY - rect.top;
     const pdfPoint = { x: x / this.zoom, y: y / this.zoom };
 
+    if (this.mode === 'erase') {
+      this.handleEraseClick(pdfPoint);
+      return;
+    }
+
     if (this.mode === 'terminal') {
-      this.terminals.push(pdfPoint);
-      this.terminalsChanged.emit(this.terminals);
-      this.saveDrawingData();
-      this.redrawOverlay();
+      const marker = { x: pdfPoint.x, y: pdfPoint.y };
+      if (this.projectId) {
+        this.saveMarkerToBackend(marker, 'terminal');
+      } else {
+        const maxId = this.terminals.length > 0 ? Math.max(...this.terminals.map(t => t.id)) : 0;
+        this.terminals.push({ id: maxId + 1, x: pdfPoint.x, y: pdfPoint.y });
+        this.terminalsChanged.emit(this.terminals);
+        this.saveDrawingData();
+        this.redrawOverlay();
+      }
       return;
     }
 
     if (this.mode === 'drop') {
-      this.drops.push(pdfPoint);
-      this.dropsChanged.emit(this.drops);
-      this.saveDrawingData();
-      this.redrawOverlay();
+      const marker = { x: pdfPoint.x, y: pdfPoint.y };
+      if (this.projectId) {
+        this.saveMarkerToBackend(marker, 'dropPed');
+      } else {
+        const maxId = this.drops.length > 0 ? Math.max(...this.drops.map(d => d.id)) : 0;
+        this.drops.push({ id: maxId + 1, x: pdfPoint.x, y: pdfPoint.y });
+        this.dropsChanged.emit(this.drops);
+        this.saveDrawingData();
+        this.redrawOverlay();
+      }
       return;
     }
 
@@ -234,8 +271,69 @@ export class PDFViewerComponent implements OnInit, OnChanges {
       const path = [this.selectedEndpoint.point, end.point];
       const lengthFt = this.measurePath(path);
       this.polylines.push({ points: path, lengthFt, type: 'conduit' });
+      
+      // Store metadata about what this conduit connects
+      const fromMarker = this.findMarkerByPoint(this.selectedEndpoint.point, this.selectedEndpoint.type);
+      const toMarker = this.findMarkerByPoint(end.point, end.type);
+      if (fromMarker && toMarker) {
+        this.conduitMetadata.push({
+          fromId: fromMarker.id,
+          fromType: this.selectedEndpoint.type,
+          toId: toMarker.id,
+          toType: end.type,
+          lengthFt: lengthFt
+        });
+      }
+      
       this.totalConduitFeet = this.polylines.filter(p => p.type === 'conduit').reduce((sum, p) => sum + p.lengthFt, 0);
+      this.conduitsChanged.emit(this.conduitMetadata);
       this.selectedEndpoint = null;
+      this.redrawOverlay();
+      return;
+    }
+
+    if (this.mode === 'assign') {
+      this.isPanning = false;
+      
+      // Find if clicking on a marker (terminal or drop)
+      const markerAtPoint = this.findMarkerAtPoint(pdfPoint);
+      
+      if (!this.selectedMarkerForAssign) {
+        // First click: select a marker
+        if (markerAtPoint) {
+          this.selectedMarkerForAssign = markerAtPoint;
+          this.redrawOverlay();
+        } else {
+          this.showToast('Click on a terminal or drop pedestal to start an assignment');
+        }
+        return;
+      }
+      
+      // Second click: create assignment to the target point (can be anywhere)
+      if (markerAtPoint && markerAtPoint.id === this.selectedMarkerForAssign.id) {
+        this.showToast('Cannot assign a marker to itself');
+        return;
+      }
+
+      // Ensure marker is synced with backend (has a DB-backed ID we still have loaded)
+      if (!this.isMarkerSynced(this.selectedMarkerForAssign.id)) {
+        this.showToast('Marker is still saving. Please wait a moment and try again.');
+        return;
+      }
+      
+      // Create assignment from selected marker to clicked point
+      const assignment: Assignment = {
+        id: 0,
+        project_id: this.projectId || 0,
+        from_marker_id: this.selectedMarkerForAssign.id,
+        to_x: pdfPoint.x,
+        to_y: pdfPoint.y,
+        page_number: this.currentPage,
+        color: '#ff6b35', // Orange color for visibility
+      };
+      
+      this.createAssignment(assignment);
+      this.selectedMarkerForAssign = null;
       this.redrawOverlay();
       return;
     }
@@ -289,9 +387,9 @@ export class PDFViewerComponent implements OnInit, OnChanges {
     this.renderPage();
   }
 
-  setMode(next: 'pan' | 'calibrate' | 'fiber' | 'conduit' | 'terminal' | 'drop') {
+  setMode(next: 'pan' | 'calibrate' | 'fiber' | 'conduit' | 'terminal' | 'drop' | 'assign' | 'erase') {
     // Require calibration before using drawing tools
-    if (!this.scaleFeetPerPixel && next !== 'calibrate' && next !== 'pan') {
+    if (!this.scaleFeetPerPixel && next !== 'calibrate' && next !== 'pan' && next !== 'erase') {
       this.showToast('Please calibrate the scale first');
       return;
     }
@@ -344,7 +442,7 @@ export class PDFViewerComponent implements OnInit, OnChanges {
     if (saved) {
       try {
         this.scaleFeetPerPixel = parseFloat(saved);
-        this.showToast('Calibration loaded from saved data');
+        this.showToast('Calibration loaded from saved data', 2200, 'success');
         this.redrawOverlay();
       } catch (e) {
         console.error('Failed to load calibration:', e);
@@ -357,15 +455,33 @@ export class PDFViewerComponent implements OnInit, OnChanges {
     
     this.apiService.getScaleCalibrations(this.projectId).subscribe(
       (calibrations) => {
-        const pageCalibration = calibrations.find(c => c.page_number === this.currentPage);
-        if (pageCalibration) {
+        console.log('Received calibrations from backend:', calibrations);
+        
+        // Ensure we have an array
+        if (!Array.isArray(calibrations)) {
+          console.error('Calibrations response is not an array:', calibrations);
+          this.scaleFeetPerPixel = null;
+          return;
+        }
+        
+        // First try to find calibration for current page
+        let pageCalibration = calibrations.find(c => c.page_number === this.currentPage);
+        
+        // If not found, use the first available calibration (typically from page 1)
+        if (!pageCalibration && calibrations.length > 0) {
+          pageCalibration = calibrations[0];
+          console.log('Using calibration from page', pageCalibration.page_number, 'for current page', this.currentPage);
+        }
+        
+        if (pageCalibration && pageCalibration.scale_factor) {
           this.scaleFeetPerPixel = pageCalibration.scale_factor;
-          this.showToast('Calibration loaded from server');
+          console.log('Calibration loaded:', this.scaleFeetPerPixel);
+          this.showToast('Calibration loaded from server', 2200, 'success');
           this.redrawOverlay();
         } else {
-          // No calibration for this project - user must calibrate
+          console.warn('No valid calibration found');
           this.scaleFeetPerPixel = null;
-          this.showToast('Please calibrate the scale for this project', 3000);
+          this.showToast('Please calibrate the scale for this project', 3000, 'info');
         }
       },
       (error) => {
@@ -387,11 +503,11 @@ export class PDFViewerComponent implements OnInit, OnChanges {
       }).subscribe(
         () => {
           console.log('Calibration saved to backend for project', this.projectId);
-          this.showToast('Calibration saved!');
+          this.showToast('Calibration saved!', 2200, 'success');
         },
         (error) => {
           console.error('Failed to save calibration:', error);
-          this.showToast('Failed to save calibration', 2000);
+          this.showToast('Failed to save calibration', 2000, 'error');
         }
       );
     }
@@ -408,7 +524,7 @@ export class PDFViewerComponent implements OnInit, OnChanges {
     if (!isNaN(feet) && distPx > 0) {
       this.scaleFeetPerPixel = feet / distPx;
       this.saveCalibration();
-      this.showToast('Calibration saved');
+      this.showToast('Calibration saved', 2200, 'success');
       this.mode = 'pan';
     } else {
       this.scaleFeetPerPixel = null;
@@ -439,7 +555,7 @@ export class PDFViewerComponent implements OnInit, OnChanges {
       this.totalConduitFeet = this.polylines.filter(p => p.type === 'conduit').reduce((sum, p) => sum + p.lengthFt, 0);
       
       if (drawingMode === 'fiber') {
-        this.showToast(`Fiber route saved: ${lengthFt.toFixed(1)} ft`);
+        this.showToast(`Fiber route saved: ${lengthFt.toFixed(1)} ft`, 2200, 'success');
         this.polylinesChanged.emit(this.polylines);
         this.mode = 'pan';
       }
@@ -451,7 +567,7 @@ export class PDFViewerComponent implements OnInit, OnChanges {
 
   saveFiber() {
     if (this.drawingPath.length < 2) {
-      this.showToast('Need at least 2 points to save fiber');
+      this.showToast('Need at least 2 points to save fiber', 2200, 'error');
       return;
     }
     const lengthFt = this.measurePath(this.drawingPath);
@@ -460,7 +576,7 @@ export class PDFViewerComponent implements OnInit, OnChanges {
     this.totalLengthFeet = this.polylines.filter(p => p.type === 'fiber').reduce((sum, p) => sum + p.lengthFt, 0);
     this.polylinesChanged.emit(this.polylines);
     this.saveDrawingData();
-    this.showToast(`Fiber route saved: ${lengthFt.toFixed(1)} ft`);
+    this.showToast(`Fiber route saved: ${lengthFt.toFixed(1)} ft`, 2200, 'success');
     this.drawingPath = [];
     this.hoverPoint = null;
     this.mode = 'pan';
@@ -525,16 +641,223 @@ export class PDFViewerComponent implements OnInit, OnChanges {
     // markers
     this.terminals.forEach((pt, idx) => this.drawTerminal(pt, idx));
     this.drops.forEach((pt, idx) => this.drawDrop(pt, '#a855f7', idx));
+
+    // assignments (arrows from markers to lots)
+    this.assignments.forEach(assignment => {
+      this.drawAssignmentArrow(assignment);
+    });
+
+    // selected marker for assign mode
+    if (this.selectedMarkerForAssign) {
+      ctx.strokeStyle = '#fbbf24';
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.arc(this.selectedMarkerForAssign.x * this.zoom, this.selectedMarkerForAssign.y * this.zoom, 18, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+  }
+
+  private findMarkerByPoint(point: { x: number; y: number }, type: 'terminal' | 'drop'): { id: number; x: number; y: number } | null {
+    const epsilon = 0.01;
+    if (type === 'terminal') {
+      return this.terminals.find(t => Math.abs(t.x - point.x) < epsilon && Math.abs(t.y - point.y) < epsilon) || null;
+    } else {
+      return this.drops.find(d => Math.abs(d.x - point.x) < epsilon && Math.abs(d.y - point.y) < epsilon) || null;
+    }
+  }
+
+  private handleEraseClick(pdfPoint: { x: number; y: number }) {
+    const clickRadius = 15 / this.zoom;
+
+    // Check if clicking on an assignment arrow
+    const assignment = this.findAssignmentAtPoint(pdfPoint, clickRadius);
+    if (assignment) {
+      this.deleteAssignment(assignment.id);
+      return;
+    }
+
+    // Check if clicking on a marker
+    const marker = this.findMarkerAtPoint(pdfPoint);
+    if (marker) {
+      this.deleteMarker(marker);
+      return;
+    }
+
+    // Check if clicking on a polyline (fiber or conduit)
+    const polylineIndex = this.findPolylineAtPoint(pdfPoint, clickRadius);
+    if (polylineIndex !== -1) {
+      this.deletePolyline(polylineIndex);
+      return;
+    }
+
+    this.showToast('Nothing found to erase at this location');
+  }
+
+  private findAssignmentAtPoint(point: { x: number; y: number }, radius: number): Assignment | null {
+    for (const assignment of this.assignments) {
+      const fromMarkerPos = this.getMarkerPosition(assignment.from_marker_id);
+      if (!fromMarkerPos) continue;
+
+      const fromPoint = { x: fromMarkerPos.x, y: fromMarkerPos.y };
+      const toPoint = { x: assignment.to_x * this.zoom, y: assignment.to_y * this.zoom };
+      const clickPoint = { x: point.x * this.zoom, y: point.y * this.zoom };
+
+      // Check if click is near the line segment
+      const distance = this.distanceToLineSegment(clickPoint, fromPoint, toPoint);
+      if (distance <= radius * this.zoom) {
+        return assignment;
+      }
+    }
+    return null;
+  }
+
+  private distanceToLineSegment(point: { x: number; y: number }, lineStart: { x: number; y: number }, lineEnd: { x: number; y: number }): number {
+    const dx = lineEnd.x - lineStart.x;
+    const dy = lineEnd.y - lineStart.y;
+    const lengthSquared = dx * dx + dy * dy;
+
+    if (lengthSquared === 0) {
+      // Line segment is a point
+      const px = point.x - lineStart.x;
+      const py = point.y - lineStart.y;
+      return Math.sqrt(px * px + py * py);
+    }
+
+    // Calculate projection of point onto line segment
+    let t = ((point.x - lineStart.x) * dx + (point.y - lineStart.y) * dy) / lengthSquared;
+    t = Math.max(0, Math.min(1, t));
+
+    const projX = lineStart.x + t * dx;
+    const projY = lineStart.y + t * dy;
+    const distX = point.x - projX;
+    const distY = point.y - projY;
+
+    return Math.sqrt(distX * distX + distY * distY);
+  }
+
+  private findPolylineAtPoint(point: { x: number; y: number }, radius: number): number {
+    for (let i = 0; i < this.polylines.length; i++) {
+      const polyline = this.polylines[i];
+      if (polyline.points.length < 2) continue;
+
+      for (let j = 1; j < polyline.points.length; j++) {
+        const p1 = { x: polyline.points[j - 1].x * this.zoom, y: polyline.points[j - 1].y * this.zoom };
+        const p2 = { x: polyline.points[j].x * this.zoom, y: polyline.points[j].y * this.zoom };
+        const clickPoint = { x: point.x * this.zoom, y: point.y * this.zoom };
+
+        const distance = this.distanceToLineSegment(clickPoint, p1, p2);
+        if (distance <= radius * this.zoom) {
+          return i;
+        }
+      }
+    }
+    return -1;
+  }
+
+  private deleteAssignment(assignmentId: number) {
+    if (!this.projectId) {
+      this.assignments = this.assignments.filter(a => a.id !== assignmentId);
+      this.stateService.setAssignments(this.assignments);
+      this.showToast('Assignment deleted', 2200, 'success');
+      this.redrawOverlay();
+      return;
+    }
+
+    this.apiService.deleteAssignment(this.projectId, assignmentId).subscribe({
+      next: () => {
+        this.stateService.removeAssignment(assignmentId);
+        this.showToast('Assignment deleted', 2200, 'success');
+        this.redrawOverlay();
+      },
+      error: (error) => {
+        console.error('Error deleting assignment:', error);
+        this.showToast('Failed to delete assignment', 2200, 'error');
+      }
+    });
+  }
+
+  private deleteMarker(marker: { id: number; x: number; y: number; type: 'terminal' | 'drop' }) {
+    if (!this.projectId) {
+      if (marker.type === 'terminal') {
+        this.terminals = this.terminals.filter(t => t.id !== marker.id);
+        this.terminalsChanged.emit(this.terminals);
+      } else {
+        this.drops = this.drops.filter(d => d.id !== marker.id);
+        this.dropsChanged.emit(this.drops);
+      }
+      this.saveDrawingData();
+      this.showToast(`${marker.type === 'terminal' ? 'Terminal' : 'Drop Ped'} deleted`, 2200, 'success');
+      this.redrawOverlay();
+      return;
+    }
+
+    this.apiService.deleteMarker(this.projectId, marker.id).subscribe({
+      next: () => {
+        if (marker.type === 'terminal') {
+          this.terminals = this.terminals.filter(t => t.id !== marker.id);
+          this.terminalsChanged.emit(this.terminals);
+        } else {
+          this.drops = this.drops.filter(d => d.id !== marker.id);
+          this.dropsChanged.emit(this.drops);
+        }
+        this.showToast(`${marker.type === 'terminal' ? 'Terminal' : 'Drop Ped'} deleted`, 2200, 'success');
+        this.redrawOverlay();
+      },
+      error: (error) => {
+        console.error('Error deleting marker:', error);
+        this.showToast('Failed to delete marker', 2200, 'error');
+      }
+    });
+  }
+
+  private deletePolyline(index: number) {
+    const polyline = this.polylines[index];
+    const isConduit = polyline.type === 'conduit';
+
+    this.polylines.splice(index, 1);
+    
+    // Update totals
+    this.totalLengthFeet = this.polylines.filter(p => p.type === 'fiber').reduce((sum, p) => sum + p.lengthFt, 0);
+    this.totalConduitFeet = this.polylines.filter(p => p.type === 'conduit').reduce((sum, p) => sum + p.lengthFt, 0);
+
+    // Remove from conduit metadata if it's a conduit
+    if (isConduit && this.conduitMetadata.length > index) {
+      this.conduitMetadata.splice(index, 1);
+      this.conduitsChanged.emit(this.conduitMetadata);
+    }
+
+    this.polylinesChanged.emit(this.polylines);
+    this.showToast(`${isConduit ? 'Conduit' : 'Fiber route'} deleted`, 2200, 'success');
+    this.redrawOverlay();
+  }
+
+  get fiberRoutes() {
+    return this.polylines.filter(p => p.type === 'fiber');
+  }
+
+  get dropConduits() {
+    return this.conduitMetadata.map((meta, index) => {
+      const fromLabel = meta.fromType === 'terminal' 
+        ? `Terminal ${String.fromCharCode(65 + this.terminals.findIndex(t => t.id === meta.fromId))}`
+        : `Drop Ped ${String.fromCharCode(65 + this.drops.findIndex(d => d.id === meta.fromId))}`;
+      const toLabel = `Drop Ped ${String.fromCharCode(65 + this.drops.findIndex(d => d.id === meta.toId))}`;
+      return {
+        index: index,
+        from: fromLabel,
+        to: toLabel,
+        lengthFt: meta.lengthFt
+      };
+    });
   }
 
   private findNearestEndpoint(target: { x: number; y: number }, requiredType?: 'drop'): { point: { x: number; y: number }; type: 'terminal' | 'drop' } | null {
     const hitRadius = 12 / this.zoom;
     const candidates: { point: { x: number; y: number }; type: 'terminal' | 'drop' }[] = [];
     if (!requiredType || requiredType === 'drop') {
-      this.drops.forEach(p => candidates.push({ point: p, type: 'drop' }));
+      this.drops.forEach(p => candidates.push({ point: { x: p.x, y: p.y }, type: 'drop' }));
     }
     if (!requiredType) {
-      this.terminals.forEach(p => candidates.push({ point: p, type: 'terminal' }));
+      this.terminals.forEach(p => candidates.push({ point: { x: p.x, y: p.y }, type: 'terminal' }));
     }
     let closest: { point: { x: number; y: number }; type: 'terminal' | 'drop' } | null = null;
     let best = Number.MAX_VALUE;
@@ -550,8 +873,9 @@ export class PDFViewerComponent implements OnInit, OnChanges {
     return closest;
   }
 
-  private showToast(message: string, duration: number = 2200) {
+  private showToast(message: string, duration: number = 2200, type: 'success' | 'error' | 'info' = 'info') {
     this.toastMessage = message;
+    this.toastType = type;
     if (this.toastTimer) {
       clearTimeout(this.toastTimer);
     }
@@ -644,7 +968,6 @@ export class PDFViewerComponent implements OnInit, OnChanges {
       localStorage.setItem(this.getStorageKey('polylines'), JSON.stringify(this.polylines));
       localStorage.setItem(this.getStorageKey('terminals'), JSON.stringify(this.terminals));
       localStorage.setItem(this.getStorageKey('drops'), JSON.stringify(this.drops));
-      console.log('Drawing data saved:', { polylines: this.polylines.length, terminals: this.terminals.length, drops: this.drops.length });
     } catch (error) {
       console.error('Error saving drawing data:', error);
     }
@@ -656,17 +979,14 @@ export class PDFViewerComponent implements OnInit, OnChanges {
       const polylineData = localStorage.getItem(this.getStorageKey('polylines'));
       if (polylineData) {
         this.polylines = JSON.parse(polylineData);
-        console.log('Loaded polylines:', this.polylines.length);
       }
       const terminalData = localStorage.getItem(this.getStorageKey('terminals'));
       if (terminalData) {
         this.terminals = JSON.parse(terminalData);
-        console.log('Loaded terminals:', this.terminals.length);
       }
       const dropData = localStorage.getItem(this.getStorageKey('drops'));
       if (dropData) {
         this.drops = JSON.parse(dropData);
-        console.log('Loaded drops:', this.drops.length);
       }
       if (polylineData || terminalData || dropData) {
         this.redrawOverlay();
@@ -674,5 +994,204 @@ export class PDFViewerComponent implements OnInit, OnChanges {
     } catch (error) {
       console.error('Error loading drawing data:', error);
     }
+  }
+
+  // Assignment methods
+
+    // Marker methods
+    private loadMarkersFromBackend() {
+      if (!this.projectId) return;
+      this.apiService.getMarkers(this.projectId).subscribe({
+        next: (markers) => {
+          this.terminals = [];
+          this.drops = [];
+          markers.forEach(marker => {
+            const markerObj = { id: marker.id, x: marker.x, y: marker.y };
+            if (marker.marker_type === 'terminal') {
+              this.terminals.push(markerObj);
+            } else if (marker.marker_type === 'dropPed') {
+              this.drops.push(markerObj);
+            }
+          });
+          this.redrawOverlay();
+        },
+        error: (err) => {
+          console.error('Error loading markers:', err);
+        }
+      });
+    }
+
+    private saveMarkerToBackend(marker: { x: number; y: number }, type: string) {
+      if (!this.projectId) return;
+      const payload = {
+        page_number: this.currentPage,
+        marker_type: type,
+        x: marker.x,
+        y: marker.y
+      };
+      this.apiService.addMarker(this.projectId, payload).subscribe({
+        next: (savedMarker) => {
+          const markerObj = { id: savedMarker.id, x: savedMarker.x, y: savedMarker.y };
+          if (type === 'terminal') {
+            this.terminals.push(markerObj);
+            this.terminalsChanged.emit(this.terminals);
+          } else {
+            this.drops.push(markerObj);
+            this.dropsChanged.emit(this.drops);
+          }
+          this.saveDrawingData();
+          this.redrawOverlay();
+        },
+        error: (err) => {
+          console.error(`Error saving ${type} marker:`, err);
+          this.showToast(`Failed to save ${type}`, 2200, 'error');
+        }
+      });
+    }
+
+    private ensureAssignmentsSubscription() {
+      if (this.assignmentsSubscribed) return;
+      this.assignmentsSubscribed = true;
+      this.stateService.assignments$.subscribe(assignments => {
+        this.assignments = assignments;
+        this.redrawOverlay();
+      });
+    }
+
+    private isMarkerSynced(markerId: number): boolean {
+      return this.terminals.some(t => t.id === markerId) || this.drops.some(d => d.id === markerId);
+    }
+
+  private loadAssignments() {
+    if (!this.projectId) return;
+    this.apiService.getAssignments(this.projectId).subscribe({
+      next: (markerLinks) => {
+        // Transform MarkerLink responses to Assignment objects
+        const assignments: Assignment[] = markerLinks.map(link => ({
+          id: link.id,
+          project_id: this.projectId || 0,
+          from_marker_id: link.marker_id,
+          to_x: link.to_x,
+          to_y: link.to_y,
+          page_number: link.page_number,
+          color: '#ff6b35',
+        }));
+        this.stateService.setAssignments(assignments);
+      },
+      error: (err) => {
+        console.error('Error loading assignments:', err);
+      }
+    });
+  }
+
+  private createAssignment(assignment: Assignment) {
+    if (!this.projectId) return;
+    
+    // Transform Assignment to MarkerLinkCreate (API expects marker_id, not from_marker_id)
+    const payload = {
+      marker_id: assignment.from_marker_id,
+      to_x: assignment.to_x,
+      to_y: assignment.to_y,
+      page_number: assignment.page_number,
+    };
+    
+    this.apiService.createAssignment(this.projectId, payload).subscribe({
+      next: (createdAssignment) => {
+        // Map response back to Assignment format
+        const created: Assignment = {
+          id: createdAssignment.id,
+          project_id: this.projectId || 0,
+          from_marker_id: createdAssignment.marker_id,
+          to_x: createdAssignment.to_x,
+          to_y: createdAssignment.to_y,
+          page_number: createdAssignment.page_number,
+          color: '#ff6b35',
+        };
+        this.stateService.addAssignment(created);
+        this.showToast('Assignment created successfully', 2200, 'success');
+        this.redrawOverlay();
+      },
+      error: (err) => {
+        console.error('Error creating assignment:', err);
+        this.showToast('Failed to create assignment', 2200, 'error');
+      }
+    });
+  }
+
+  private findMarkerAtPoint(point: { x: number; y: number }): { id: number; x: number; y: number; type: 'terminal' | 'drop' } | null {
+    const hitRadius = 20 / this.zoom; // 20px click radius
+    
+    // Check terminals
+    for (let i = 0; i < this.terminals.length; i++) {
+      const dx = this.terminals[i].x - point.x;
+      const dy = this.terminals[i].y - point.y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      if (dist <= hitRadius) {
+        return { id: this.terminals[i].id, x: this.terminals[i].x, y: this.terminals[i].y, type: 'terminal' };
+      }
+    }
+    
+    // Check drops
+    for (let i = 0; i < this.drops.length; i++) {
+      const dx = this.drops[i].x - point.x;
+      const dy = this.drops[i].y - point.y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      if (dist <= hitRadius) {
+        return { id: this.drops[i].id, x: this.drops[i].x, y: this.drops[i].y, type: 'drop' };
+      }
+    }
+    
+    return null;
+  }
+
+  private drawAssignmentArrow(assignment: Assignment) {
+    if (!this.overlayCtx) return;
+    const ctx = this.overlayCtx;
+    const color = assignment.color || '#ff6b35';
+    
+    const fromMarker = this.selectedMarkerForAssign?.id === assignment.from_marker_id
+      ? { x: this.selectedMarkerForAssign.x * this.zoom, y: this.selectedMarkerForAssign.y * this.zoom }
+      : this.getMarkerPosition(assignment.from_marker_id);
+    
+    if (!fromMarker) return;
+    
+    const toX = assignment.to_x * this.zoom;
+    const toY = assignment.to_y * this.zoom;
+    
+    // Draw arrow line
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(fromMarker.x, fromMarker.y);
+    ctx.lineTo(toX, toY);
+    ctx.stroke();
+    
+    // Draw arrowhead
+    const headLen = 15;
+    const angle = Math.atan2(toY - fromMarker.y, toX - fromMarker.x);
+    
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.moveTo(toX, toY);
+    ctx.lineTo(toX - headLen * Math.cos(angle - Math.PI / 6), toY - headLen * Math.sin(angle - Math.PI / 6));
+    ctx.lineTo(toX - headLen * Math.cos(angle + Math.PI / 6), toY - headLen * Math.sin(angle + Math.PI / 6));
+    ctx.closePath();
+    ctx.fill();
+  }
+
+  private getMarkerPosition(markerId: number): { x: number; y: number } | null {
+    // Check terminals
+    const terminal = this.terminals.find(t => t.id === markerId);
+    if (terminal) {
+      return { x: terminal.x * this.zoom, y: terminal.y * this.zoom };
+    }
+    
+    // Check drops
+    const drop = this.drops.find(d => d.id === markerId);
+    if (drop) {
+      return { x: drop.x * this.zoom, y: drop.y * this.zoom };
+    }
+    
+    return null;
   }
 }

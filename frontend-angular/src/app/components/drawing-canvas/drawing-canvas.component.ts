@@ -203,7 +203,7 @@ export class DrawingCanvasComponent implements OnInit, AfterViewInit, OnDestroy 
     this.stateService.markers$.subscribe((markers) => {
       markers.forEach((marker) => {
         const canvasCoord = this.toCanvasCoordinates({ x: marker.x, y: marker.y });
-        const isSelected = this.selectedMarker && this.selectedMarker.id === marker.id;
+        const isSelected = !!(this.selectedMarker && this.selectedMarker.id === marker.id);
         if (marker.marker_type === 'terminal') {
           this.drawTerminal(canvasCoord.x, canvasCoord.y, isSelected);
         } else if (marker.marker_type === 'dropPed') {

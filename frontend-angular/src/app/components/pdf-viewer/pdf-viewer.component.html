@@ -54,17 +54,29 @@
           <button (click)="setMode('conduit'); showEquipmentMenu = false"
             [class.bg-blue-600]="mode==='conduit'"
             [class.text-white]="mode==='conduit'"
-            class="block w-full text-left px-4 py-2 hover:bg-gray-100">Conduit</button>
+            class="block w-full text-left px-4 py-2 hover:bg-gray-100">Drop Conduit</button>
         </div>
       </div>
+      <button (click)="setMode('assign')"
+        [disabled]="!scaleFeetPerPixel"
+        [class.bg-blue-600]="mode==='assign'"
+        [class.text-white]="mode==='assign'"
+        class="px-3 py-1 rounded border disabled:opacity-50 disabled:cursor-not-allowed">Assign</button>
+      <button (click)="setMode('erase')"
+        [class.bg-red-600]="mode==='erase'"
+        [class.text-white]="mode==='erase'"
+        class="px-3 py-1 rounded border hover:bg-red-50">Erase</button>
       <button (click)="cancelDrawing()" *ngIf="mode !== 'pan'" class="px-3 py-1 rounded border bg-gray-100 hover:bg-gray-200">Cancel</button>
     </div>
     <div class="text-xs text-gray-700 flex flex-wrap gap-x-4 gap-y-1">
       <div *ngIf="!scaleFeetPerPixel">Calibrate: click two points on scale, enter real feet.</div>
       <div *ngIf="scaleFeetPerPixel">Scale: {{ (scaleFeetPerPixel*12).toFixed(4) }} inches/px ({{ (scaleFeetPerPixel).toFixed(4) }} ft/px)</div>
-      <div>Fiber total: {{ totalLengthFeet.toFixed(1) }} ft</div>
-      <div>Conduit total: {{ totalConduitFeet.toFixed(1) }} ft</div>
+      <div>Fiber Routes: {{ fiberRoutes.length }} ({{ totalLengthFeet.toFixed(1) }} ft)</div>
+      <div>Drop Conduits: {{ dropConduits.length }} ({{ totalConduitFeet.toFixed(1) }} ft)</div>
       <div>Markers: {{ terminals.length }} terminals, {{ drops.length }} drops</div>
+      <div *ngIf="assignments.length > 0">Assignments: {{ assignments.length }}</div>
+      <div *ngIf="mode === 'assign' && selectedMarkerForAssign">Assign: Click a terminal or drop to create arrow</div>
+      <div *ngIf="mode === 'erase'">Erase: Click on any assignment, marker, or route to delete it</div>
     </div>
   </div>
 
@@ -86,11 +98,17 @@
       <canvas
         #overlayCanvas
         class="absolute inset-0 pointer-events-auto"
-        [style.cursor]="(mode === 'fiber' || mode === 'conduit' || mode === 'calibrate') ? 'crosshair' : 'auto'"
+        [style.cursor]="(mode === 'fiber' || mode === 'conduit' || mode === 'calibrate' || mode === 'assign') ? 'crosshair' : (mode === 'erase' ? 'not-allowed' : 'auto')"
       ></canvas>
     </div>
 
-    <div *ngIf="toastMessage" class="absolute top-2 left-1/2 -translate-x-1/2 bg-rose-600 text-white px-4 py-2 rounded shadow text-sm pointer-events-none">
+    <div *ngIf="toastMessage" 
+      class="absolute top-2 left-1/2 -translate-x-1/2 text-white px-4 py-2 rounded shadow text-sm pointer-events-none"
+      [ngClass]="{
+        'bg-green-600': toastType === 'success',
+        'bg-rose-600': toastType === 'error',
+        'bg-blue-600': toastType === 'info'
+      }">
       {{ toastMessage }}
     </div>
   </div>
