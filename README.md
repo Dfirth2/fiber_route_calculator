@@ -65,5 +65,41 @@ A web application for measuring fiber routes from subdivision plats. Upload a PD
   - Angular app successfully compiles with no TypeScript errors
   - Refactored large inline templates to separate HTML files for better maintainability
 
+## Update 4
+- **Assignment System**:
+  - Implemented "Assign" tool to create directional arrows from terminals/drops to lot locations
+  - Assignments stored in backend database with proper marker ID validation
+  - Backend validates marker existence before creating assignments (prevents 404 errors)
+  - Assignments persist and load correctly with database-backed marker IDs
+  - Fixed race conditions between marker saving and assignment creation
+  - Yellow highlight shows selected marker when creating assignments
+  - Orange arrows render from markers to assigned lot positions
+- **Drop Conduit Management**:
+  - Separated drop conduits from fiber routes in UI
+  - New "Drop Conduits" section in sidebar showing connection details
+  - Displays what each conduit connects (e.g., "Terminal A → Drop Ped C — 45.2 ft")
+  - Conduits track both source and destination markers with distance
+  - Equipment menu now shows "Drop Conduit" instead of generic "Conduit"
+  - Conduit metadata properly tracks fromId, fromType, toId, toType, and lengthFt
+- **Erase Mode**:
+  - Added comprehensive erase functionality for all drawable elements
+  - Click on assignments (arrows), markers, fiber routes, or conduits to delete
+  - Smart detection with reasonable click radius for easier selection
+  - Visual feedback with red button highlight and "not-allowed" cursor
+  - Works with both local storage and backend-persisted data
+  - Shows success/error toasts with appropriate colors
+- **UI/UX Improvements**:
+  - Toast notifications now color-coded: green for success, red for errors, blue for info
+  - Toolbar stats now show "Fiber Routes: X (YYY ft)" and "Drop Conduits: X (YYY ft)"
+  - Sidebar renamed "Fiber Segments" to "Fiber Cable" for clarity
+  - Consistent labeling: "Drop Ped" used throughout instead of inconsistent "Drop"
+  - Helper messages show mode-specific instructions (calibrate, assign, erase)
+- **Code Quality**:
+  - Added proper TypeScript typing for all new features
+  - Implemented event emitters for conduit changes
+  - Proper separation of concerns between fiber routes and conduits
+  - Helper methods for geometric calculations (distance to line segment)
+  - Cleaned up duplicate code and improved maintainability
+
 ## Requirments
 

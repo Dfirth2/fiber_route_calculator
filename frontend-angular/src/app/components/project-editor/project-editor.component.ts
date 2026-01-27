@@ -41,6 +41,7 @@ import { DrawingCanvasComponent } from '../drawing-canvas/drawing-canvas.compone
           (polylinesChanged)="onPolylinesChanged($event)"
           (terminalsChanged)="onTerminalsChanged($event)"
           (dropsChanged)="onDropsChanged($event)"
+          (conduitsChanged)="onConduitsChanged($event)"
         ></app-pdf-viewer>
         <div *ngIf="pdfCanvas && viewport" class="absolute inset-0">
           <app-drawing-canvas 
@@ -76,7 +77,7 @@ import { DrawingCanvasComponent } from '../drawing-canvas/drawing-canvas.compone
         </div>
 
         <div class="space-y-2">
-          <h3 class="font-semibold text-sm">Fiber Segments ({{ fiberSegments.length }})</h3>
+          <h3 class="font-semibold text-sm">Fiber Cable ({{ fiberSegments.length }})</h3>
           <ul class="space-y-1 text-sm text-gray-700" *ngIf="fiberSegments.length; else noFiber">
             <li *ngFor="let seg of fiberSegments" class="flex justify-between items-center bg-gray-50 p-2 rounded">
               <span>{{ seg.name || 'Route' }} – page {{ seg.page_number }} – {{ seg.length_ft ? seg.length_ft.toFixed(1) : '0.0' }} ft</span>
@@ -87,14 +88,14 @@ import { DrawingCanvasComponent } from '../drawing-canvas/drawing-canvas.compone
         </div>
 
         <div class="space-y-2">
-          <h3 class="font-semibold text-sm">Links & Conduits ({{ conduits.length }})</h3>
-          <ul class="space-y-1 text-sm text-gray-700" *ngIf="conduits.length; else noConduits">
-            <li *ngFor="let c of conduits" class="flex justify-between items-center bg-gray-50 p-2 rounded">
-              <span>Terminal {{ c.terminal_id }} → Drop {{ c.drop_ped_id }} — {{ c.footage ? c.footage.toFixed(1) : '0.0' }} ft (page {{ c.page_number }})</span>
-              <button (click)="removeConduit(c)" class="text-xs text-red-600 hover:text-red-800">Remove</button>
+          <h3 class="font-semibold text-sm">Drop Conduits ({{ dropConduits.length }})</h3>
+          <ul class="space-y-1 text-sm text-gray-700" *ngIf="dropConduits.length; else noConduits">
+            <li *ngFor="let c of dropConduits" class="flex justify-between items-center bg-gray-50 p-2 rounded">
+              <span>{{ c.from }} → {{ c.to }} — {{ c.lengthFt.toFixed(1) }} ft</span>
+              <button (click)="removeDropConduit(c.index)" class="text-xs text-red-600 hover:text-red-800">Remove</button>
             </li>
           </ul>
-          <ng-template #noConduits><div class="text-xs text-gray-500">No conduits linked</div></ng-template>
+          <ng-template #noConduits><div class="text-xs text-gray-500">No conduits</div></ng-template>
         </div>
 
         <div class="space-y-2">
@@ -125,6 +126,7 @@ export class ProjectEditorComponent implements OnInit {
   polylines: Polyline[] = [];
   conduits: Conduit[] = [];
   markerLinks: MarkerLink[] = [];
+  dropConduits: { index: number; from: string; to: string; lengthFt: number }[] = [];
   String = String; // Make String accessible in templates
 
   constructor(
@@ -231,6 +233,22 @@ export class ProjectEditorComponent implements OnInit {
     }));
     
     this.markers = [...this.markers.filter(m => m.marker_type === 'terminal'), ...dropMarkers];
+  }
+
+  onConduitsChanged(conduits: any[]) {
+    // Update dropConduits with formatted conduit data
+    this.dropConduits = conduits.map((meta: any, index: number) => {
+      const fromLabel = meta.fromType === 'terminal' 
+        ? `Terminal ${String.fromCharCode(65 + this.terminals.findIndex((t: Marker) => t.id === meta.fromId))}`
+        : `Drop Ped ${String.fromCharCode(65 + this.drops.findIndex((d: Marker) => d.id === meta.fromId))}`;
+      const toLabel = `Drop Ped ${String.fromCharCode(65 + this.drops.findIndex((d: Marker) => d.id === meta.toId))}`;
+      return {
+        index: index,
+        from: fromLabel,
+        to: toLabel,
+        lengthFt: meta.lengthFt
+      };
+    });
   }
 
   setMarkerMode(mode: string) {
@@ -388,6 +406,12 @@ export class ProjectEditorComponent implements OnInit {
     } else {
       this.conduits = this.conduits.filter(c => c !== conduit);
     }
+  }
+
+  removeDropConduit(index: number) {
+    // For now, just remove from the local display array
+    // In a full implementation, this would also remove from backend
+    this.dropConduits = this.dropConduits.filter(c => c.index !== index);
   }
 
   onCalibrationChanged(calibration: any) {

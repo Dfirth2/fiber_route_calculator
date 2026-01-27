@@ -87,6 +87,23 @@ export class ApiService {
     return this.http.post<any>(`${this.apiUrl}/projects/${projectId}/marker-links`, link);
   }
 
+  // Assignments (arrows from terminals/drops to lots)
+  getAssignments(projectId: number): Observable<any[]> {
+    return this.http.get<any[]>(`${this.apiUrl}/projects/${projectId}/assignments`);
+  }
+
+  createAssignment(projectId: number, assignment: any): Observable<any> {
+    return this.http.post<any>(`${this.apiUrl}/projects/${projectId}/assignments`, assignment);
+  }
+
+  updateAssignment(projectId: number, assignmentId: number, assignment: any): Observable<any> {
+    return this.http.put<any>(`${this.apiUrl}/projects/${projectId}/assignments/${assignmentId}`, assignment);
+  }
+
+  deleteAssignment(projectId: number, assignmentId: number): Observable<any> {
+    return this.http.delete<any>(`${this.apiUrl}/projects/${projectId}/assignments/${assignmentId}`);
+  }
+
   // PDF
   getPdf(projectId: number): Observable<Blob> {
     return this.http.get(`${this.apiUrl}/projects/${projectId}/pdf`, { responseType: 'blob' });

@@ -196,6 +196,23 @@ def delete_project(project_id: int, db: Session = Depends(get_db)):
     
     return {"message": "Project deleted"}
 
+@router.get("/{project_id}/scale-calibrations", response_model=List[ScaleCalibrationSchema])
+def get_scale_calibrations(
+    project_id: int,
+    db: Session = Depends(get_db),
+):
+    """Get all scale calibrations for a project."""
+    project = db.query(Project).filter(Project.id == project_id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    
+    calibrations = db.query(ScaleCalibration).filter(
+        ScaleCalibration.project_id == project_id
+    ).all()
+    
+    return calibrations
+
+
 @router.post("/{project_id}/scale-calibrations", response_model=ScaleCalibrationSchema)
 def create_scale_calibration(
     project_id: int,
