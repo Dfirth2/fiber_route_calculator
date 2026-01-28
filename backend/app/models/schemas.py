@@ -9,6 +9,7 @@ class Point(BaseModel):
 
 # Scale calibration schemas
 class ScaleCalibration(BaseModel):
+    page_number: Optional[int] = 1  # Default to page 1 if not specified
     method: str  # "manual" or "two_point"
     scale_factor: float  # feet per PDF unit
     manual_scale_str: Optional[str] = None  # e.g., "1 inch = 50 feet"

@@ -43,7 +43,7 @@ export class PDFViewerComponent implements OnInit, OnChanges {
   scaleFeetPerPixel: number | null = null;
   drawingPath: { x: number; y: number }[] = [];
   hoverPoint: { x: number; y: number } | null = null;
-  polylines: { points: { x: number; y: number }[]; lengthFt: number; type: 'fiber' | 'conduit' }[] = [];
+  polylines: any[] = [];
   conduitMetadata: { fromId: number; fromType: 'terminal' | 'drop'; fromX?: number; fromY?: number; toId: number; toType: 'terminal' | 'drop'; toX?: number; toY?: number; lengthFt: number; pageNumber?: number }[] = [];
   totalLengthFeet = 0;
   totalConduitFeet = 0;
@@ -70,13 +70,14 @@ export class PDFViewerComponent implements OnInit, OnChanges {
   @Output() terminalsChanged = new EventEmitter<any[]>();
   @Output() dropsChanged = new EventEmitter<any[]>();
   @Output() conduitsChanged = new EventEmitter<any[]>();
+  @Output() currentPageChanged = new EventEmitter<number>();
 
   constructor(private apiService: ApiService, private stateService: StateService) {}
 
   async ngOnInit() {
     if (this.pdfUrl) {
       await this.loadPdf();
-      this.loadCalibrationFromBackend();
+      // Calibration is now loaded in loadPdf after currentPage is set
       if (this.projectId) {
         this.loadAssignments();
         this.ensureAssignmentsSubscription();
@@ -143,8 +144,11 @@ export class PDFViewerComponent implements OnInit, OnChanges {
       this.currentPage = 1;
       this.panOffset = { x: 0, y: 0 };
       await this.renderPage();
-      // Only load local storage when no project backing store
-      if (!this.projectId) {
+      // Load calibration and markers after PDF and page are ready
+      if (this.projectId) {
+        this.loadCalibrationFromBackend();
+        this.loadMarkersFromBackend();
+      } else {
         this.loadDrawingData();
       }
     } catch (error) {
@@ -155,10 +159,13 @@ export class PDFViewerComponent implements OnInit, OnChanges {
   async renderPage() {
     if (!this.pdf || !this.canvasRef) return;
 
+    // Cancel any ongoing render task
     if (this.renderTask) {
       try {
         this.renderTask.cancel();
-      } catch (err) {}
+      } catch (err) {
+        // Ignore errors from cancellation
+      }
     }
 
     try {
@@ -184,8 +191,12 @@ export class PDFViewerComponent implements OnInit, OnChanges {
       const renderContext = { canvasContext: context, viewport };
       this.renderTask = page.render(renderContext);
       await this.renderTask.promise;
-    } catch (error) {
-      console.error('Render error:', error);
+      this.renderTask = null; // Clear the task reference after successful render
+    } catch (error: any) {
+      // RenderingCancelledException is expected when rapid navigation occurs
+      if (error?.name !== 'RenderingCancelledException') {
+        console.error('Render error:', error);
+      }
     }
   }
 
@@ -507,21 +518,15 @@ export class PDFViewerComponent implements OnInit, OnChanges {
         // First try to find calibration for current page
         let pageCalibration = calibrations.find(c => c.page_number === this.currentPage);
         
-        // If not found, use the first available calibration (typically from page 1)
-        if (!pageCalibration && calibrations.length > 0) {
-          pageCalibration = calibrations[0];
-          console.log('Using calibration from page', pageCalibration.page_number, 'for current page', this.currentPage);
-        }
-        
         if (pageCalibration && pageCalibration.scale_factor) {
           this.scaleFeetPerPixel = pageCalibration.scale_factor;
-          console.log('Calibration loaded:', this.scaleFeetPerPixel);
-          this.showToast('Calibration loaded from server', 2200, 'success');
+          console.log('Calibration loaded for page', this.currentPage, ':', this.scaleFeetPerPixel);
+          this.showToast(`Page ${this.currentPage} calibration loaded`, 2200, 'success');
           this.redrawOverlay();
         } else {
-          console.warn('No valid calibration found');
+          console.warn('No calibration found for page', this.currentPage);
           this.scaleFeetPerPixel = null;
-          this.showToast('Please calibrate the scale for this project', 3000, 'info');
+          this.showToast(`Page ${this.currentPage} not calibrated. Please calibrate the scale.`, 3000, 'info');
         }
       },
       (error) => {
@@ -609,7 +614,7 @@ export class PDFViewerComponent implements OnInit, OnChanges {
     if ((this.mode === 'fiber' || this.mode === 'conduit') && this.drawingPath.length > 1) {
       const lengthFt = this.measurePath(this.drawingPath);
       const drawingMode = this.mode;
-      this.polylines.push({ points: [...this.drawingPath], lengthFt, type: this.mode });
+      this.polylines.push({ points: [...this.drawingPath], lengthFt, type: this.mode, pageNumber: this.currentPage });
       this.totalLengthFeet = this.polylines.filter(p => p.type === 'fiber').reduce((sum, p) => sum + p.lengthFt, 0);
       this.totalConduitFeet = this.polylines.filter(p => p.type === 'conduit').reduce((sum, p) => sum + p.lengthFt, 0);
       
@@ -891,24 +896,42 @@ export class PDFViewerComponent implements OnInit, OnChanges {
   }
 
   get fiberRoutes() {
-    return this.polylines.filter(p => p.type === 'fiber');
+    return this.polylines.filter(p => p.type === 'fiber' && (!p.page_number || p.page_number === this.currentPage));
   }
 
   get dropConduits() {
-    return this.conduitMetadata.map((meta, index) => {
-      const fromLabel = meta.fromType === 'terminal' 
-        ? `Terminal ${this.getLabel(this.terminals.findIndex(t => t.id === meta.fromId))}`
-        : `Drop Ped ${this.getLabel(this.drops.findIndex(d => d.id === meta.fromId))}`;
-      const toLabel = `Drop Ped ${this.getLabel(this.drops.findIndex(d => d.id === meta.toId))}`;
-      return {
-        index: index,
-        from: fromLabel,
-        to: toLabel,
-        lengthFt: meta.lengthFt
-      };
-    });
+    return this.conduitMetadata
+      .filter(meta => !meta.pageNumber || meta.pageNumber === this.currentPage)
+      .map((meta, index) => {
+        const fromLabel = meta.fromType === 'terminal' 
+          ? `Terminal ${this.getLabel(this.terminals.findIndex(t => t.id === meta.fromId))}`
+          : `Drop Ped ${this.getLabel(this.drops.findIndex(d => d.id === meta.fromId))}`;
+        const toLabel = `Drop Ped ${this.getLabel(this.drops.findIndex(d => d.id === meta.toId))}`;
+        return {
+          index: index,
+          from: fromLabel,
+          to: toLabel,
+          lengthFt: meta.lengthFt,
+          pageNumber: meta.pageNumber
+        };
+      });
   }
 
+  get currentPageFiberLength(): number {
+    return this.fiberRoutes.reduce((sum, p) => sum + (p.length_ft || 0), 0);
+  }
+
+  get currentPageConduitLength(): number {
+    return this.dropConduits.reduce((sum, c) => sum + (c.lengthFt || 0), 0);
+  }
+
+  get currentPageTerminals(): any[] {
+    return this.terminals;
+  }
+
+  get currentPageDrops(): any[] {
+    return this.drops;
+  }
   private findNearestEndpoint(target: { x: number; y: number }, requiredType?: 'drop'): { point: { x: number; y: number }; type: 'terminal' | 'drop' } | null {
     const hitRadius = 12 / this.zoom;
     const candidates: { point: { x: number; y: number }; type: 'terminal' | 'drop' }[] = [];
@@ -1001,17 +1024,33 @@ export class PDFViewerComponent implements OnInit, OnChanges {
     this.overlayCtx.stroke();
   }
 
-  nextPage() {
+  async nextPage() {
     if (this.pdf && this.currentPage < this.pdf.numPages) {
       this.currentPage++;
-      this.renderPage();
+      this.currentPageChanged.emit(this.currentPage);
+      await this.renderPage();
+      // Reload calibration and markers for the new page
+      if (this.projectId) {
+        this.loadCalibrationFromBackend();
+        this.loadMarkersFromBackend();
+        this.loadAssignments();
+      }
+      this.redrawOverlay();
     }
   }
 
-  prevPage() {
+  async prevPage() {
     if (this.pdf && this.currentPage > 1) {
       this.currentPage--;
-      this.renderPage();
+      this.currentPageChanged.emit(this.currentPage);
+      await this.renderPage();
+      // Reload calibration and markers for the new page
+      if (this.projectId) {
+        this.loadCalibrationFromBackend();
+        this.loadMarkersFromBackend();
+        this.loadAssignments();
+      }
+      this.redrawOverlay();
     }
   }
 
@@ -1064,7 +1103,12 @@ export class PDFViewerComponent implements OnInit, OnChanges {
         next: (markers) => {
           this.terminals = [];
           this.drops = [];
+          // Filter markers to only show those on the current page
           markers.forEach(marker => {
+            // Only load markers for the current page
+            if (marker.page_number !== this.currentPage) {
+              return;
+            }
             const markerObj = { id: marker.id, x: marker.x, y: marker.y };
             if (marker.marker_type === 'terminal') {
               this.terminals.push(markerObj);
@@ -1125,16 +1169,18 @@ export class PDFViewerComponent implements OnInit, OnChanges {
     if (!this.projectId) return;
     this.apiService.getAssignments(this.projectId).subscribe({
       next: (markerLinks) => {
-        // Transform MarkerLink responses to Assignment objects
-        const assignments: Assignment[] = markerLinks.map(link => ({
-          id: link.id,
-          project_id: this.projectId || 0,
-          from_marker_id: link.marker_id,
-          to_x: link.to_x,
-          to_y: link.to_y,
-          page_number: link.page_number,
-          color: '#ff6b35',
-        }));
+        // Transform MarkerLink responses to Assignment objects and filter by current page
+        const assignments: Assignment[] = markerLinks
+          .filter(link => link.page_number === this.currentPage)
+          .map(link => ({
+            id: link.id,
+            project_id: this.projectId || 0,
+            from_marker_id: link.marker_id,
+            to_x: link.to_x,
+            to_y: link.to_y,
+            page_number: link.page_number,
+            color: '#ff6b35',
+          }));
         this.stateService.setAssignments(assignments);
       },
       error: (err) => {

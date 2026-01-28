@@ -3,6 +3,220 @@ BY dfirth2
 
 A web application for measuring fiber routes from subdivision plats. Upload a PDF plat, calibrate the scale, trace fiber paths, and export accurate footage calculations for network design documentation.
 
+## Quick Start (Docker)
+```bash
+docker-compose up -d
+# Frontend: http://localhost:3000
+# Backend: http://localhost:8000
+# API Docs: http://localhost:8000/docs
+```
+
+## Setup Without Docker (Non-Docker Installation)
+
+### Prerequisites
+- **Python 3.11+** (for backend)
+- **Node.js 18+** (for frontend)
+- **SQLite** (built-in, no setup needed) OR **PostgreSQL** (for production)
+
+### Backend Setup
+
+1. **Create and activate Python virtual environment:**
+```bash
+cd backend
+python -m venv venv
+
+# On Linux/Mac:
+source venv/bin/activate
+
+# On Windows:
+venv\Scripts\activate
+```
+
+2. **Install Python dependencies:**
+```bash
+pip install -r requirements.txt
+```
+
+3. **Set environment variables:**
+```bash
+# Create a .env file in the backend directory
+cp backend/.env.example backend/.env  # if example exists, or create manually
+
+# For development (SQLite - default):
+export ENVIRONMENT=development
+export DATABASE_URL=sqlite:///./fiber_db.sqlite
+export UPLOAD_DIR=./uploads
+
+# For production (PostgreSQL):
+export ENVIRONMENT=production
+export DATABASE_URL=postgresql://username:password@localhost:5432/fiber_db
+export UPLOAD_DIR=/var/fiber_uploads
+```
+
+4. **Create uploads directory:**
+```bash
+mkdir -p uploads
+```
+
+5. **Start the backend server:**
+```bash
+cd backend
+python main.py
+# Backend will start on http://localhost:8000
+# API docs available at http://localhost:8000/docs
+```
+
+### Frontend Setup
+
+1. **Install Node dependencies:**
+```bash
+cd frontend-angular
+npm install
+```
+
+2. **Start the development server:**
+```bash
+npm start
+# or
+ng serve
+
+# Frontend will start on http://localhost:4200
+# Automatically proxies API calls to http://localhost:8000
+```
+
+3. **Access the application:**
+- Open http://localhost:4200 in your browser
+- Upload a PDF plat to get started
+
+### Database Setup
+
+#### Using SQLite (Default, No Setup Needed)
+The application will automatically create `fiber_db.sqlite` in the backend directory on first run.
+
+#### Using PostgreSQL (Production)
+
+1. **Install PostgreSQL:**
+```bash
+# Ubuntu/Debian:
+sudo apt-get install postgresql postgresql-contrib
+
+# macOS:
+brew install postgresql
+
+# Windows:
+# Download from https://www.postgresql.org/download/windows/
+```
+
+2. **Create database and user:**
+```bash
+sudo -u postgres psql
+
+# In PostgreSQL shell:
+CREATE DATABASE fiber_db;
+CREATE USER fiber_user WITH PASSWORD 'fiber_password';
+ALTER ROLE fiber_user SET client_encoding TO 'utf8';
+ALTER ROLE fiber_user SET default_transaction_isolation TO 'read committed';
+ALTER ROLE fiber_user SET default_transaction_deferrable TO on;
+ALTER ROLE fiber_user SET timezone TO 'UTC';
+GRANT ALL PRIVILEGES ON DATABASE fiber_db TO fiber_user;
+\q
+```
+
+3. **Set PostgreSQL connection string:**
+```bash
+export DATABASE_URL=postgresql://fiber_user:fiber_password@localhost:5432/fiber_db
+export ENVIRONMENT=production
+```
+
+### Troubleshooting Non-Docker Setup
+
+#### "ModuleNotFoundError: No module named 'app'"
+**Solution:** Make sure you're in the `backend` directory when running `python main.py`
+
+#### "Database connection refused"
+**Solution:** Check your DATABASE_URL environment variable:
+```bash
+# For SQLite (default):
+export DATABASE_URL=sqlite:///./fiber_db.sqlite
+
+# For PostgreSQL:
+export DATABASE_URL=postgresql://fiber_user:password@localhost:5432/fiber_db
+
+# Verify PostgreSQL is running:
+sudo systemctl status postgresql  # Linux
+brew services list | grep postgres  # macOS
+```
+
+#### "Port 8000 already in use"
+**Solution:** The backend is already running or another service is using port 8000
+```bash
+# Kill the process using port 8000:
+# Linux/Mac:
+lsof -ti:8000 | xargs kill -9
+
+# Windows:
+netstat -ano | findstr :8000
+taskkill /PID <PID> /F
+```
+
+#### Projects won't load / API returns 404
+**Solutions:**
+1. Verify backend is running on port 8000:
+   ```bash
+   curl http://localhost:8000/health
+   # Should return: {"status": "healthy"}
+   ```
+
+2. Check frontend is pointing to correct API URL (should auto-detect for localhost):
+   ```bash
+   # In browser DevTools Console, check if API calls are going to http://localhost:8000
+   ```
+
+3. Ensure database has been initialized (tables should be created automatically)
+
+4. Check backend logs for database errors:
+   ```bash
+   # Look for SQLAlchemy connection errors
+   ```
+
+### Quick Setup Scripts
+
+We've provided setup scripts to automate the process:
+
+**Linux/macOS:**
+```bash
+chmod +x setup-nondocker.sh
+./setup-nondocker.sh
+```
+
+**Windows:**
+```cmd
+setup-nondocker.bat
+```
+
+These scripts will:
+- Check for required tools (Python, Node.js)
+- Create Python virtual environment
+- Install all dependencies
+- Create necessary directories
+- Generate configuration files
+
+## Database Configuration
+
+### Switching Between SQLite and PostgreSQL
+
+The application automatically selects the database based on the `DATABASE_URL` environment variable:
+
+```bash
+# Development with SQLite (default):
+export DATABASE_URL=sqlite:///./fiber_db.sqlite
+
+# Production with PostgreSQL:
+export DATABASE_URL=postgresql://fiber_user:password@localhost:5432/fiber_db
+```
+
+**Important:** Tables are created automatically on first run. No manual SQL scripts needed.
+
 ## What this app does
 - Upload subdivision plat PDFs and browse pages.
 - Calibrate scale by clicking two points and entering the real-world distance.
@@ -170,4 +384,32 @@ A web application for measuring fiber routes from subdivision plats. Upload a PD
   - Better separation between canvas coordinate space and screen space
   - Mouse handlers attached to correct DOM elements for transform calculations
   - Enhanced reliability of click detection for all interactive elements
+
+## Update 7 - Multi-Page PDF Support with Per-Page Calibration
+- **Per-Page Scale Calibration**:
+  - Each page in a multi-page PDF can now have its own scale calibration
+  - Calibration automatically loads when navigating between pages
+  - Clear toast notifications indicate which page calibration is loaded
+  - Warns user if current page hasn't been calibrated yet
+  - Prevents using incorrect scale from different pages
+- **Page-Specific Content Filtering**:
+  - Markers (terminals and drop pedestals) only display on the page they were created on
+  - Fiber routes and conduits are page-specific
+  - Lot assignments filtered by page
+  - Page navigation automatically reloads content for the current page
+- **Page Navigation Enhancements**:
+  - Next/Previous page buttons reload calibration for new page
+  - Markers automatically filter to show only current page items
+  - Polylines tracked with page numbers for proper filtering
+  - Conduit metadata includes page numbers
+- **Data Structure Updates**:
+  - Polylines now store `pageNumber` property
+  - All markers saved with current `page_number`
+  - Assignments linked to specific pages
+  - Backend already supported page-specific data, now fully utilized in frontend
+- **User Experience**:
+  - Seamless page switching without data contamination between pages
+  - Each page maintains independent scale and annotations
+  - Supports complex subdivision plats spanning multiple pages with different scales
+  - Clear feedback when page needs calibration
 

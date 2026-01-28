@@ -47,6 +47,7 @@ import { DrawingCanvasComponent } from '../drawing-canvas/drawing-canvas.compone
           (terminalsChanged)="onTerminalsChanged($event)"
           (dropsChanged)="onDropsChanged($event)"
           (conduitsChanged)="onConduitsChanged($event)"
+          (currentPageChanged)="onCurrentPageChanged($event)"
         ></app-pdf-viewer>
         <div *ngIf="pdfCanvas && viewport" class="absolute inset-0">
           <app-drawing-canvas 
@@ -107,14 +108,14 @@ import { DrawingCanvasComponent } from '../drawing-canvas/drawing-canvas.compone
         
         <div class="space-y-2">
           <button (click)="expandedSections['terminals'] = !expandedSections['terminals']" class="w-full flex justify-between items-center font-semibold text-sm text-gray-800 hover:bg-gray-100 p-2 rounded">
-            <span>Terminals ({{ terminals.length }})</span>
+            <span>Terminals ({{ syncedTerminalsList.length }})</span>
             <span class="text-lg">{{ expandedSections['terminals'] ? '−' : '+' }}</span>
           </button>
           <div *ngIf="expandedSections['terminals']" class="space-y-2">
-            <div *ngIf="terminals.length; else noTerminals" class="space-y-2">
-              <div *ngFor="let t of terminals; let i = index" class="bg-gray-50 p-2 rounded border-l-4 border-green-500">
+            <div *ngIf="syncedTerminalsList.length; else noTerminals" class="space-y-2">
+              <div *ngFor="let t of syncedTerminalsList; let i = index" class="bg-gray-50 p-2 rounded border-l-4 border-green-500">
                 <div class="flex justify-between items-center text-sm">
-                  <span class="font-medium">Terminal {{ getLabel(i) }}</span>
+                  <span class="font-medium">Terminal {{ getLabel(terminals.indexOf(t)) }}</span>
                   <span *ngIf="getTerminalAssignmentCount(t.id) > 0" class="text-xs bg-green-100 text-green-800 px-2 py-1 rounded">{{ getTerminalAssignmentCount(t.id) }} assign</span>
                 </div>
                 <div *ngIf="getConnectedDrops(t.id).length > 0" class="mt-2 ml-2 border-l-2 border-gray-300 pl-2 space-y-1">
@@ -132,14 +133,14 @@ import { DrawingCanvasComponent } from '../drawing-canvas/drawing-canvas.compone
 
         <div class="space-y-2">
           <button (click)="expandedSections['drops'] = !expandedSections['drops']" class="w-full flex justify-between items-center font-semibold text-sm text-gray-800 hover:bg-gray-100 p-2 rounded">
-            <span>Drop Peds ({{ drops.length }})</span>
+            <span>Drop Peds ({{ syncedDropsList.length }})</span>
             <span class="text-lg">{{ expandedSections['drops'] ? '−' : '+' }}</span>
           </button>
           <div *ngIf="expandedSections['drops']" class="space-y-2">
-            <div *ngIf="drops.length; else noDrops" class="space-y-2">
-              <div *ngFor="let d of drops; let i = index" class="bg-gray-50 p-2 rounded border-l-4 border-purple-500">
+            <div *ngIf="syncedDropsList.length; else noDrops" class="space-y-2">
+              <div *ngFor="let d of syncedDropsList; let i = index" class="bg-gray-50 p-2 rounded border-l-4 border-purple-500">
                 <div class="flex justify-between items-center text-sm">
-                  <span class="font-medium">Drop Ped {{ getLabel(i) }}</span>
+                  <span class="font-medium">Drop Ped {{ getLabel(drops.indexOf(d)) }}</span>
                   <span *ngIf="getDropAssignmentCount(d.id) > 0" class="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded">{{ getDropAssignmentCount(d.id) }} assign</span>
                 </div>
               </div>
@@ -165,12 +166,12 @@ import { DrawingCanvasComponent } from '../drawing-canvas/drawing-canvas.compone
 
         <div class="space-y-2">
           <button (click)="expandedSections['conduits'] = !expandedSections['conduits']" class="w-full flex justify-between items-center font-semibold text-sm text-gray-800 hover:bg-gray-100 p-2 rounded">
-            <span>Drop Conduits ({{ dropConduits.length }})</span>
+            <span>Drop Conduits ({{ filteredDropConduits.length }})</span>
             <span class="text-lg">{{ expandedSections['conduits'] ? '−' : '+' }}</span>
           </button>
           <div *ngIf="expandedSections['conduits']" class="space-y-1">
-            <ul class="space-y-1 text-sm text-gray-700" *ngIf="dropConduits.length; else noConduits">
-              <li *ngFor="let c of dropConduits" class="bg-gray-50 p-2 rounded">
+            <ul class="space-y-1 text-sm text-gray-700" *ngIf="filteredDropConduits.length; else noConduits">
+              <li *ngFor="let c of filteredDropConduits" class="bg-gray-50 p-2 rounded">
                 <span>{{ c.from }} → {{ c.to }} — {{ c.lengthFt.toFixed(1) }} ft</span>
               </li>
             </ul>
@@ -253,7 +254,7 @@ export class ProjectEditorComponent implements OnInit {
   polylines: Polyline[] = [];
   conduits: Conduit[] = [];
   markerLinks: MarkerLink[] = [];
-  dropConduits: { index: number; from: string; to: string; lengthFt: number }[] = [];
+  dropConduits: { index: number; from: string; to: string; lengthFt: number; pageNumber?: number }[] = [];
   conduitMetadata: { fromId: number; fromType: 'terminal' | 'drop'; fromX?: number; fromY?: number; toId: number; toType: 'terminal' | 'drop'; toX?: number; toY?: number; lengthFt: number; pageNumber: number }[] = [];
   conduitRelationships: { terminalId: number; dropPedIds: number[] }[] = []; // Tracks which drops connect to each terminal
   assignments: any[] = []; // Store assignments for counting
@@ -262,6 +263,7 @@ export class ProjectEditorComponent implements OnInit {
   ponCableName: string = '';
   showProjectDetailsModal: boolean = false;
   sidebarOpen: boolean = false;
+  currentPdfPage: number = 1; // Track current page being viewed
   expandedSections: { [key: string]: boolean } = {
     terminals: false,
     drops: false,
@@ -450,12 +452,17 @@ export class ProjectEditorComponent implements OnInit {
     this.viewport = event.viewport;
   }
 
+  onCurrentPageChanged(page: number) {
+    this.currentPdfPage = page;
+    console.log('Current PDF page changed to:', page);
+  }
+
   onPolylinesChanged(polylines: any[]) {
     // Update polylines with the local drawing data from pdf-viewer
     this.polylines = polylines.map((p, idx) => ({
       id: this.polylines.find(pl => pl.length_ft === p.lengthFt && pl.name?.includes(p.type === 'fiber' ? 'Fiber' : 'Conduit'))?.id || -idx - 1,
       project_id: this.projectId || 0,
-      page_number: 1,
+      page_number: p.pageNumber || 1,
       name: p.type === 'fiber' ? `Fiber Route ${idx + 1}` : `Drop Conduit ${idx + 1}`,
       points: p.points,
       length_ft: p.lengthFt,
@@ -559,7 +566,8 @@ export class ProjectEditorComponent implements OnInit {
         index: index,
         from: fromLabel,
         to: toLabel,
-        lengthFt: meta.lengthFt
+        lengthFt: meta.lengthFt,
+        pageNumber: meta.pageNumber
       };
     });
   }
@@ -766,23 +774,35 @@ export class ProjectEditorComponent implements OnInit {
   }
 
   get syncedTerminalsList(): any[] {
-    return this.terminals.map((t) => ({x: t.x, y: t.y, id: t.id, marker_type: t.marker_type}));
+    // Filter to only show terminals from the current page
+    return this.terminals
+      .filter(t => !t.page_number || t.page_number === this.currentPdfPage)
+      .map((t) => ({x: t.x, y: t.y, id: t.id, marker_type: t.marker_type}));
   }
 
   get syncedDropsList(): any[] {
-    return this.drops.map((d) => ({x: d.x, y: d.y, id: d.id, marker_type: d.marker_type}));
+    // Filter to only show drops from the current page
+    return this.drops
+      .filter(d => !d.page_number || d.page_number === this.currentPdfPage)
+      .map((d) => ({x: d.x, y: d.y, id: d.id, marker_type: d.marker_type}));
   }
 
   get syncedPolylinesList(): Polyline[] {
-    return this.polylines;
+    // Filter to only show polylines from the current page
+    return this.polylines.filter(p => !p.page_number || p.page_number === this.currentPdfPage);
   }
 
   get syncedConduitsList(): any[] {
-    return this.conduitMetadata;
+    // Filter to only show conduits from the current page
+    return this.conduitMetadata.filter(c => !c.pageNumber || c.pageNumber === this.currentPdfPage);
   }
 
   get fiberSegments(): Polyline[] {
-    return this.polylines.filter(p => !p.type || p.type === 'fiber');
+    return this.polylines.filter(p => (!p.type || p.type === 'fiber') && (!p.page_number || p.page_number === this.currentPdfPage));
+  }
+
+  get filteredDropConduits(): { index: number; from: string; to: string; lengthFt: number; pageNumber?: number }[] {
+    return this.dropConduits.filter(c => !c.pageNumber || c.pageNumber === this.currentPdfPage);
   }
 
   removeTerminal(terminal: Marker) {
