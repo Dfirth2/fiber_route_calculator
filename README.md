@@ -101,5 +101,43 @@ A web application for measuring fiber routes from subdivision plats. Upload a PD
   - Helper methods for geometric calculations (distance to line segment)
   - Cleaned up duplicate code and improved maintainability
 
-## Requirments
+## Update 5
+- **Conduit Persistence System**:
+  - Fixed critical marker ID synchronization bug between PDF viewer and project editor
+  - Replaced ID-based marker lookup with coordinate-based lookup for reliability
+  - Conduit metadata now stores coordinates (fromX, fromY, toX, toY) alongside IDs
+  - Conduits properly save to database with correct marker references
+  - Conduits persist and reload correctly after page refresh
+  - Resolved race condition where local IDs didn't match database IDs
+  - Conduit relationships now track which drops connect to terminals for assignment aggregation
+- **Polyline Persistence**:
+  - Fixed conduit polylines not displaying after reload
+  - Polylines now emit change event when conduits are drawn (previously only stored locally)
+  - Backend correctly distinguishes between fiber routes and conduits via polyline type field
+  - Loaded polylines automatically get type field inferred from name ("Fiber" vs "Conduit")
+  - All polylines (fiber and conduit) properly sync and render on canvas after project reload
+- **Calibration Dialog**:
+  - Replaced browser prompt() with professional modal dialog
+  - Dialog validates input to only accept numeric values
+  - Shows error message "Please enter a valid positive number" if validation fails
+  - Dialog remains open if input is invalid, allowing user to correct and retry
+  - Fixed modal positioning to center on screen (changed from absolute to fixed)
+  - User can submit with Enter key or Cancel button
+  - Calibration points are properly reset on cancel
+- **Data Synchronization**:
+  - Added `[syncedConduits]` input to PDF viewer component
+  - Project editor passes conduit metadata to PDF viewer for rendering
+  - ngOnChanges handler properly clones conduit data to avoid reference issues
+  - Polylines, terminals, drops, and conduits all sync between components correctly
+  - Project reload now displays all saved markers, polylines, conduits, and conduit lines
+- **Type System**:
+  - Updated conduit metadata TypeScript interface with optional coordinate fields
+  - Proper typing for polyline objects with type field ('fiber' | 'conduit')
+  - Added FormsModule import for two-way binding in calibration dialog
+  - Type safety maintained throughout persistence workflow
+- **Infrastructure**:
+  - Backend PDF deletion already implemented (removed from /tmp/fiber_uploads on project delete)
+  - Polyline save endpoint correctly persists both fiber routes and conduits
+  - Conduit endpoint validates terminal and drop pedestal existence (404 prevention)
+  - All endpoints properly cascade delete related data when project is deleted
 

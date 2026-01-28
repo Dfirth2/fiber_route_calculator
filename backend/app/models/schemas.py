@@ -82,16 +82,25 @@ class ConduitResponse(ConduitCreate):
 class ProjectCreate(BaseModel):
     name: str
     description: Optional[str] = None
+    project_number: Optional[str] = None
+    devlog_number: Optional[str] = None
+    pon_cable_name: Optional[str] = None
 
 class ProjectUpdate(BaseModel):
     name: Optional[str] = None
     description: Optional[str] = None
+    project_number: Optional[str] = None
+    devlog_number: Optional[str] = None
+    pon_cable_name: Optional[str] = None
 
 class ProjectResponse(ProjectCreate):
     id: int
     pdf_filename: str
     page_count: int
     total_length_ft: float
+    project_number: Optional[str] = None
+    devlog_number: Optional[str] = None
+    pon_cable_name: Optional[str] = None
     created_at: datetime
     updated_at: datetime
 

@@ -101,6 +101,9 @@ def list_projects(db: Session = Depends(get_db)):
             id=p.id,
             name=p.name,
             description=p.description,
+            project_number=p.project_number,
+            devlog_number=p.devlog_number,
+            pon_cable_name=p.pon_cable_name,
             pdf_filename=p.pdf_filename,
             page_count=p.page_count,
             total_length_ft=p.total_length_ft,
@@ -143,6 +146,9 @@ def get_project(project_id: int, db: Session = Depends(get_db)):
         id=project.id,
         name=project.name,
         description=project.description,
+        project_number=project.project_number,
+        devlog_number=project.devlog_number,
+        pon_cable_name=project.pon_cable_name,
         pdf_filename=project.pdf_filename,
         page_count=project.page_count,
         total_length_ft=project.total_length_ft,
@@ -177,6 +183,34 @@ def get_project(project_id: int, db: Session = Depends(get_db)):
             for sc in scale_calibrations
         ],
     )
+
+@router.patch("/{project_id}", response_model=ProjectResponse)
+def update_project(
+    project_id: int,
+    project_update: dict,
+    db: Session = Depends(get_db)
+):
+    """Update project details (name, description, project_number, devlog_number, pon_cable_name)."""
+    project = db.query(Project).filter(Project.id == project_id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    
+    # Update allowed fields
+    if "name" in project_update:
+        project.name = project_update["name"]
+    if "description" in project_update:
+        project.description = project_update["description"]
+    if "project_number" in project_update:
+        project.project_number = project_update["project_number"]
+    if "devlog_number" in project_update:
+        project.devlog_number = project_update["devlog_number"]
+    if "pon_cable_name" in project_update:
+        project.pon_cable_name = project_update["pon_cable_name"]
+    
+    db.commit()
+    db.refresh(project)
+    
+    return project
 
 @router.delete("/{project_id}")
 def delete_project(project_id: int, db: Session = Depends(get_db)):
