@@ -258,24 +258,31 @@ def create_scale_calibration(
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
     
+    # Get page number from calibration, default to 1 if not provided
+    page_number = getattr(calibration, 'page_number', 1)
+    
     # Check if calibration already exists for this page
     existing = db.query(ScaleCalibration).filter(
         ScaleCalibration.project_id == project_id,
-        ScaleCalibration.page_number == calibration.page_number if hasattr(calibration, 'page_number') else True,
+        ScaleCalibration.page_number == page_number,
     ).first()
     
     if existing:
+        # Update existing calibration
         existing.method = calibration.method
         existing.scale_factor = calibration.scale_factor
         existing.manual_scale_str = calibration.manual_scale_str
         existing.point_a = calibration.point_a.dict() if calibration.point_a else None
         existing.point_b = calibration.point_b.dict() if calibration.point_b else None
         existing.known_distance_ft = calibration.known_distance_ft
+        db.commit()
+        db.refresh(existing)
+        return existing
     else:
         # Create new calibration
         db_calib = ScaleCalibration(
             project_id=project_id,
-            page_number=getattr(calibration, 'page_number', 1),
+            page_number=page_number,
             method=calibration.method,
             scale_factor=calibration.scale_factor,
             manual_scale_str=calibration.manual_scale_str,
@@ -284,9 +291,9 @@ def create_scale_calibration(
             known_distance_ft=calibration.known_distance_ft,
         )
         db.add(db_calib)
-    
-    db.commit()
-    return calibration
+        db.commit()
+        db.refresh(db_calib)
+        return db_calib
 
 @router.get("/{project_id}/polylines", response_model=List[PolylineResponse])
 def get_polylines(project_id: int, db: Session = Depends(get_db)):

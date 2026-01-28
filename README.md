@@ -1,7 +1,7 @@
 # Fiber Route Plat Designer
 BY dfirth2
 
-A web application for measuring fiber routes from subdivision plats. Upload a PDF plat, calibrate the scale, trace fiber paths, and export accurate footage calculations for network design documentation.
+A web application for measuring fiber routes from subdivision plats. Upload a PDF plat, calibrate the scale, trace fiber paths, and export accurate footage calculations for network design documenta
 
 ## What this app does
 - Upload subdivision plat PDFs and browse pages.
@@ -170,4 +170,32 @@ A web application for measuring fiber routes from subdivision plats. Upload a PD
   - Better separation between canvas coordinate space and screen space
   - Mouse handlers attached to correct DOM elements for transform calculations
   - Enhanced reliability of click detection for all interactive elements
+
+## Update 7 - Multi-Page PDF Support with Per-Page Calibration
+- **Per-Page Scale Calibration**:
+  - Each page in a multi-page PDF can now have its own scale calibration
+  - Calibration automatically loads when navigating between pages
+  - Clear toast notifications indicate which page calibration is loaded
+  - Warns user if current page hasn't been calibrated yet
+  - Prevents using incorrect scale from different pages
+- **Page-Specific Content Filtering**:
+  - Markers (terminals and drop pedestals) only display on the page they were created on
+  - Fiber routes and conduits are page-specific
+  - Lot assignments filtered by page
+  - Page navigation automatically reloads content for the current page
+- **Page Navigation Enhancements**:
+  - Next/Previous page buttons reload calibration for new page
+  - Markers automatically filter to show only current page items
+  - Polylines tracked with page numbers for proper filtering
+  - Conduit metadata includes page numbers
+- **Data Structure Updates**:
+  - Polylines now store `pageNumber` property
+  - All markers saved with current `page_number`
+  - Assignments linked to specific pages
+  - Backend already supported page-specific data, now fully utilized in frontend
+- **User Experience**:
+  - Seamless page switching without data contamination between pages
+  - Each page maintains independent scale and annotations
+  - Supports complex subdivision plats spanning multiple pages with different scales
+  - Clear feedback when page needs calibration
 

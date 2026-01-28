@@ -71,9 +71,9 @@
     <div class="text-xs text-gray-700 flex flex-wrap gap-x-4 gap-y-1">
       <div *ngIf="!scaleFeetPerPixel">Calibrate: click two points on scale, enter real feet.</div>
       <div *ngIf="scaleFeetPerPixel">Scale: {{ (scaleFeetPerPixel*12).toFixed(4) }} inches/px ({{ (scaleFeetPerPixel).toFixed(4) }} ft/px)</div>
-      <div>Fiber Routes: {{ fiberRoutes.length }} ({{ totalLengthFeet.toFixed(1) }} ft)</div>
-      <div>Drop Conduits: {{ dropConduits.length }} ({{ totalConduitFeet.toFixed(1) }} ft)</div>
-      <div>Markers: {{ terminals.length }} terminals, {{ drops.length }} drops</div>
+      <div>Fiber Routes: {{ fiberRoutes.length }} ({{ currentPageFiberLength.toFixed(1) }} ft)</div>
+      <div>Drop Conduits: {{ dropConduits.length }} ({{ currentPageConduitLength.toFixed(1) }} ft)</div>
+      <div>Markers: {{ currentPageTerminals.length }} terminals, {{ currentPageDrops.length }} drops</div>
       <div *ngIf="assignments.length > 0">Assignments: {{ assignments.length }}</div>
       <div *ngIf="mode === 'assign' && selectedMarkerForAssign">Assign: Click a terminal or drop to create arrow</div>
       <div *ngIf="mode === 'erase'">Erase: Click on any assignment, marker, or route to delete it</div>
