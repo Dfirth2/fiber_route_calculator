@@ -1,5 +1,6 @@
 import { Component, Input, OnChanges, OnInit, SimpleChanges, ViewChild, ElementRef, Output, EventEmitter } from '@angular/core';
 import { CommonModule } from '@angular/common';
+import { FormsModule } from '@angular/forms';
 import * as pdfjsLib from 'pdfjs-dist';
 import { ApiService } from '../../core/services/api.service';
 import { StateService, Assignment } from '../../core/services/state.service';
@@ -9,7 +10,7 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = '/assets/pdf.worker.min.mjs';
 @Component({
   selector: 'app-pdf-viewer',
   standalone: true,
-  imports: [CommonModule],
+  imports: [CommonModule, FormsModule],
   templateUrl: './pdf-viewer.component.html',
   styles: [`
     :host {
@@ -28,6 +29,7 @@ export class PDFViewerComponent implements OnInit, OnChanges {
   @Input() syncedTerminals: any[] = [];
   @Input() syncedDrops: any[] = [];
   @Input() syncedPolylines: any[] = [];
+  @Input() syncedConduits: any[] = [];
 
   pdf: any = null;
   currentPage = 1;
@@ -42,7 +44,7 @@ export class PDFViewerComponent implements OnInit, OnChanges {
   drawingPath: { x: number; y: number }[] = [];
   hoverPoint: { x: number; y: number } | null = null;
   polylines: { points: { x: number; y: number }[]; lengthFt: number; type: 'fiber' | 'conduit' }[] = [];
-  conduitMetadata: { fromId: number; fromType: 'terminal' | 'drop'; toId: number; toType: 'terminal' | 'drop'; lengthFt: number }[] = [];
+  conduitMetadata: { fromId: number; fromType: 'terminal' | 'drop'; fromX?: number; fromY?: number; toId: number; toType: 'terminal' | 'drop'; toX?: number; toY?: number; lengthFt: number; pageNumber?: number }[] = [];
   totalLengthFeet = 0;
   totalConduitFeet = 0;
   terminals: { id: number; x: number; y: number }[] = [];
@@ -54,6 +56,9 @@ export class PDFViewerComponent implements OnInit, OnChanges {
   toastType: 'success' | 'error' | 'info' = 'info';
   showEquipmentMenu = false;
   showCalibrationMenu = false;
+  showCalibrationDialog = false;
+  calibrationInput: string = '';
+  calibrationError: string = '';
   private assignmentsSubscribed = false;
   private toastTimer: any = null;
 
@@ -87,23 +92,38 @@ export class PDFViewerComponent implements OnInit, OnChanges {
     }
     if (changes['projectId'] && this.projectId) {
       this.loadCalibrationFromBackend();
-      this.loadMarkersFromBackend();
+      // Don't load markers here - parent component handles this via synced inputs
       this.loadAssignments();
       this.ensureAssignmentsSubscription();
     }
-    if (changes['syncedTerminals'] && this.syncedTerminals && !this.projectId) {
-      this.terminals = this.syncedTerminals;
-      this.saveDrawingData();
+    // Always sync terminals from parent (whether projectId exists or not)
+    if (changes['syncedTerminals'] && this.syncedTerminals) {
+      this.terminals = this.syncedTerminals.map(t => ({...t})); // Clone to avoid reference issues
+      if (!this.projectId) {
+        this.saveDrawingData();
+      }
       this.redrawOverlay();
     }
-    if (changes['syncedDrops'] && this.syncedDrops && !this.projectId) {
-      this.drops = this.syncedDrops;
-      this.saveDrawingData();
+    // Always sync drops from parent (whether projectId exists or not)
+    if (changes['syncedDrops'] && this.syncedDrops) {
+      this.drops = this.syncedDrops.map(d => ({...d})); // Clone to avoid reference issues
+      if (!this.projectId) {
+        this.saveDrawingData();
+      }
       this.redrawOverlay();
     }
     if (changes['syncedPolylines'] && this.syncedPolylines) {
       this.polylines = this.syncedPolylines;
-      this.saveDrawingData();
+      if (!this.projectId) {
+        this.saveDrawingData();
+      }
+      this.redrawOverlay();
+    }
+    if (changes['syncedConduits'] && this.syncedConduits) {
+      this.conduitMetadata = this.syncedConduits.map(c => ({...c})); // Clone to avoid reference issues
+      if (!this.projectId) {
+        this.saveDrawingData();
+      }
       this.redrawOverlay();
     }
   }
@@ -188,6 +208,8 @@ export class PDFViewerComponent implements OnInit, OnChanges {
     }
 
     if (this.mode === 'terminal') {
+      this.isPanning = false;
+      this.lastMouse = { x: 0, y: 0 }; // Reset lastMouse to prevent stale coordinates
       const marker = { x: pdfPoint.x, y: pdfPoint.y };
       if (this.projectId) {
         this.saveMarkerToBackend(marker, 'terminal');
@@ -202,6 +224,8 @@ export class PDFViewerComponent implements OnInit, OnChanges {
     }
 
     if (this.mode === 'drop') {
+      this.isPanning = false;
+      this.lastMouse = { x: 0, y: 0 }; // Reset lastMouse to prevent stale coordinates
       const marker = { x: pdfPoint.x, y: pdfPoint.y };
       if (this.projectId) {
         this.saveMarkerToBackend(marker, 'dropPed');
@@ -279,14 +303,20 @@ export class PDFViewerComponent implements OnInit, OnChanges {
         this.conduitMetadata.push({
           fromId: fromMarker.id,
           fromType: this.selectedEndpoint.type,
+          fromX: fromMarker.x,  // Store coordinates for lookup
+          fromY: fromMarker.y,
           toId: toMarker.id,
           toType: end.type,
-          lengthFt: lengthFt
+          toX: toMarker.x,  // Store coordinates for lookup
+          toY: toMarker.y,
+          lengthFt: lengthFt,
+          pageNumber: this.currentPage
         });
       }
       
       this.totalConduitFeet = this.polylines.filter(p => p.type === 'conduit').reduce((sum, p) => sum + p.lengthFt, 0);
       this.conduitsChanged.emit(this.conduitMetadata);
+      this.polylinesChanged.emit(this.polylines);
       this.selectedEndpoint = null;
       this.redrawOverlay();
       return;
@@ -342,28 +372,36 @@ export class PDFViewerComponent implements OnInit, OnChanges {
   }
 
   onMouseMove(event: MouseEvent) {
-    if (this.mode === 'pan') {
-      if (!this.isPanning) return;
-      const dx = event.clientX - this.lastMouse.x;
-      const dy = event.clientY - this.lastMouse.y;
-      this.panOffset.x += dx;
-      this.panOffset.y += dy;
-      this.lastMouse = { x: event.clientX, y: event.clientY };
+    // CRITICAL: Only allow panning if we're EXPLICITLY in pan mode AND actively panning
+    // Prevent ANY pan calculations if not in pan mode
+    if (this.mode !== 'pan' || !this.isPanning) {
+      // If we're not in pan mode or not actively panning, ensure pan state is clean
+      this.isPanning = false;
+      
+      // Handle fiber drawing hover preview
+      if (this.mode === 'fiber' && this.drawingPath.length > 0 && this.overlayRef) {
+        const rect = this.overlayRef.nativeElement.getBoundingClientRect();
+        const x = event.clientX - rect.left;
+        const y = event.clientY - rect.top;
+        this.hoverPoint = { x: x / this.zoom, y: y / this.zoom };
+        this.redrawOverlay();
+      }
       return;
     }
 
-    if (this.mode === 'fiber' && this.drawingPath.length > 0 && this.overlayRef) {
-      const rect = this.overlayRef.nativeElement.getBoundingClientRect();
-      const x = event.clientX - rect.left;
-      const y = event.clientY - rect.top;
-      this.hoverPoint = { x: x / this.zoom, y: y / this.zoom };
-      this.redrawOverlay();
-    }
+    // Safe to pan - we're definitely in pan mode and actively panning
+    const dx = event.clientX - this.lastMouse.x;
+    const dy = event.clientY - this.lastMouse.y;
+    this.panOffset.x += dx;
+    this.panOffset.y += dy;
+    this.lastMouse = { x: event.clientX, y: event.clientY };
   }
 
   onMouseUp() {
+    // Always reset panning state on mouse up
+    this.isPanning = false;
+    
     if (this.mode === 'pan') {
-      this.isPanning = false;
       return;
     }
 
@@ -395,6 +433,11 @@ export class PDFViewerComponent implements OnInit, OnChanges {
     }
     this.mode = next;
     this.isPanning = false;
+    this.lastMouse = { x: 0, y: 0 }; // Reset mouse position to prevent stale pan data
+    // Reset pan offset when entering non-pan modes
+    if (next !== 'pan') {
+      this.panOffset = { x: 0, y: 0 };
+    }
     // Clear drawing path only when switching to incompatible modes (not when switching to/from pan)
     if (next !== 'fiber' && next !== 'conduit' && next !== 'pan') {
       this.drawingPath = [];
@@ -515,21 +558,40 @@ export class PDFViewerComponent implements OnInit, OnChanges {
 
   private finishCalibration() {
     if (this.calibrationPoints.length !== 2) return;
+    this.showCalibrationDialog = true;
+    this.calibrationInput = '';
+    this.calibrationError = '';
+  }
+
+  onCalibrationSubmit() {
+    const feet = parseFloat(this.calibrationInput);
+    if (isNaN(feet) || feet <= 0) {
+      this.calibrationError = 'Please enter a valid positive number';
+      return;
+    }
+    
     const [p1, p2] = this.calibrationPoints;
     const dx = p2.x - p1.x;
     const dy = p2.y - p1.y;
     const distPx = Math.sqrt(dx * dx + dy * dy);
-    const input = prompt('Enter real-world distance between points (feet):');
-    const feet = input ? parseFloat(input) : NaN;
-    if (!isNaN(feet) && distPx > 0) {
+    
+    if (distPx > 0) {
       this.scaleFeetPerPixel = feet / distPx;
       this.saveCalibration();
       this.showToast('Calibration saved', 2200, 'success');
       this.mode = 'pan';
-    } else {
-      this.scaleFeetPerPixel = null;
     }
+    
     this.calibrationPoints = [];
+    this.showCalibrationDialog = false;
+    this.redrawOverlay();
+  }
+
+  onCalibrationCancel() {
+    this.calibrationPoints = [];
+    this.showCalibrationDialog = false;
+    this.calibrationInput = '';
+    this.calibrationError = '';
     this.redrawOverlay();
   }
 
@@ -838,9 +900,9 @@ export class PDFViewerComponent implements OnInit, OnChanges {
   get dropConduits() {
     return this.conduitMetadata.map((meta, index) => {
       const fromLabel = meta.fromType === 'terminal' 
-        ? `Terminal ${String.fromCharCode(65 + this.terminals.findIndex(t => t.id === meta.fromId))}`
-        : `Drop Ped ${String.fromCharCode(65 + this.drops.findIndex(d => d.id === meta.fromId))}`;
-      const toLabel = `Drop Ped ${String.fromCharCode(65 + this.drops.findIndex(d => d.id === meta.toId))}`;
+        ? `Terminal ${this.getLabel(this.terminals.findIndex(t => t.id === meta.fromId))}`
+        : `Drop Ped ${this.getLabel(this.drops.findIndex(d => d.id === meta.fromId))}`;
+      const toLabel = `Drop Ped ${this.getLabel(this.drops.findIndex(d => d.id === meta.toId))}`;
       return {
         index: index,
         from: fromLabel,
@@ -902,7 +964,7 @@ export class PDFViewerComponent implements OnInit, OnChanges {
     this.overlayCtx.stroke();
     
     // Draw letter identifier
-    const letter = String.fromCharCode(65 + index); // A, B, C, etc.
+    const letter = this.getLabel(index);
     this.overlayCtx.fillStyle = '#ffffff';
     this.overlayCtx.font = 'bold 12px Arial';
     this.overlayCtx.textAlign = 'center';
@@ -923,7 +985,7 @@ export class PDFViewerComponent implements OnInit, OnChanges {
     this.overlayCtx.stroke();
     
     // Draw letter identifier
-    const letter = String.fromCharCode(65 + index); // A, B, C, etc.
+    const letter = this.getLabel(index);
     this.overlayCtx.fillStyle = '#ffffff';
     this.overlayCtx.font = 'bold 12px Arial';
     this.overlayCtx.textAlign = 'center';
@@ -1177,6 +1239,19 @@ export class PDFViewerComponent implements OnInit, OnChanges {
     ctx.lineTo(toX - headLen * Math.cos(angle + Math.PI / 6), toY - headLen * Math.sin(angle + Math.PI / 6));
     ctx.closePath();
     ctx.fill();
+  }
+
+  /**
+   * Convert zero-based index to label: A, B, ..., Z, AA, AB, ..., AZ, BA, ...
+   */
+  private getLabel(index: number): string {
+    if (index < 26) {
+      return String.fromCharCode(65 + index); // A-Z
+    }
+    // AA, AB, ..., AZ, BA, ...
+    const firstChar = String.fromCharCode(65 + Math.floor((index - 26) / 26));
+    const secondChar = String.fromCharCode(65 + ((index - 26) % 26));
+    return firstChar + secondChar;
   }
 
   private getMarkerPosition(markerId: number): { x: number; y: number } | null {

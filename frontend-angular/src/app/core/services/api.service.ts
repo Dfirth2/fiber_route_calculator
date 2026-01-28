@@ -6,9 +6,19 @@ import { Observable } from 'rxjs';
   providedIn: 'root'
 })
 export class ApiService {
-  private apiUrl = `${window.location.protocol}//${window.location.hostname}:8000/api`;
+  private apiUrl: string;
 
-  constructor(private http: HttpClient) {}
+  constructor(private http: HttpClient) {
+    // Build API URL dynamically based on current location
+    // If in development, use the configured port; if in production, use relative path
+    if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+      // Local development - backend on port 8000
+      this.apiUrl = `${window.location.protocol}//${window.location.hostname}:8000/api`;
+    } else {
+      // Production - backend on same host/port (proxied through reverse proxy or same origin)
+      this.apiUrl = `${window.location.protocol}//${window.location.host}/api`;
+    }
+  }
 
   // Projects
   getProjects(): Observable<any[]> {
@@ -17,6 +27,10 @@ export class ApiService {
 
   getProject(id: number): Observable<any> {
     return this.http.get<any>(`${this.apiUrl}/projects/${id}/`);
+  }
+
+  updateProject(id: number, updates: any): Observable<any> {
+    return this.http.patch<any>(`${this.apiUrl}/projects/${id}/`, updates);
   }
 
   createProject(name: string, file: File): Observable<any> {

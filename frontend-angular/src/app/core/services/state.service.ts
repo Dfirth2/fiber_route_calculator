@@ -25,6 +25,7 @@ export interface Polyline {
   name: string;
   points: { x: number; y: number }[];
   length_ft: number;
+  type?: 'fiber' | 'conduit';
 }
 
 export interface Conduit {
