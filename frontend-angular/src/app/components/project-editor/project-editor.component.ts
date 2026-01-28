@@ -383,7 +383,12 @@ export class ProjectEditorComponent implements OnInit {
         this.projectNumber = project.project_number || '';
         this.devlogNumber = project.devlog_number || '';
         this.ponCableName = project.pon_cable_name || '';
-        this.pdfUrl = `${window.location.protocol}//${window.location.hostname}:8000/api/projects/${this.projectId}/pdf`;
+        // Use proper API URL construction - relative path for production, absolute for dev
+        if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+          this.pdfUrl = `${window.location.protocol}//${window.location.hostname}:8000/api/projects/${this.projectId}/pdf`;
+        } else {
+          this.pdfUrl = `/api/projects/${this.projectId}/pdf`;
+        }
         this.loadProjectData();
       },
       (error) => console.error('Failed to load project', error)
@@ -761,11 +766,11 @@ export class ProjectEditorComponent implements OnInit {
   }
 
   get syncedTerminalsList(): any[] {
-    return this.terminals.map((t, idx) => ({x: t.x, y: t.y, id: idx}));
+    return this.terminals.map((t) => ({x: t.x, y: t.y, id: t.id, marker_type: t.marker_type}));
   }
 
   get syncedDropsList(): any[] {
-    return this.drops.map((d, idx) => ({x: d.x, y: d.y, id: idx}));
+    return this.drops.map((d) => ({x: d.x, y: d.y, id: d.id, marker_type: d.marker_type}));
   }
 
   get syncedPolylinesList(): Polyline[] {

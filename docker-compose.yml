@@ -31,7 +31,7 @@ services:
     environment:
       DATABASE_URL: postgresql://fiber_user:fiber_password@postgres:5432/fiber_db
       SECRET_KEY: "change-this-in-production"
-      CORS_ORIGINS: "http://localhost:3000,http://localhost:8000,http://piwebhost.local:3000,http://piwebhost.local,http://127.0.0.1:3000"
+      CORS_ORIGINS: "http://localhost:3000,http://localhost:8000,http://piwebhost.local:3000,http://piwebhost.local,http://127.0.0.1:3000,http://piwebhost.narwhal-oratrice.ts.net,http://piwebhost.narwhal-oratrice.ts.net:80"
       UPLOAD_DIR: "/tmp/fiber_uploads"
       PYTHONPATH: "/app"
     volumes:
