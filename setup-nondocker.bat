@@ -34,8 +34,17 @@ echo [OK] Node.js %NODE_VERSION% found
 REM Create .env file
 if not exist "backend\.env" (
     echo [*] Creating backend\.env...
-    copy backend\.env.example backend\.env
-    echo [INFO] Edit backend\.env with your settings if needed
+    (
+        echo # Environment variables for development with SQLite
+        echo ENVIRONMENT=development
+        echo DATABASE_URL=sqlite:///./fiber_db.sqlite
+        echo SECRET_KEY=your-secret-key-change-in-production
+        echo UPLOAD_DIR=./uploads
+        echo MAX_UPLOAD_SIZE=524288000
+        echo CORS_ORIGINS=http://localhost:3000,http://localhost:8000,http://localhost:4200,http://127.0.0.1:3000,http://127.0.0.1:8000
+    ) > backend\.env
+    echo [OK] Created with SQLite ^(development mode^)
+    echo [INFO] For production with PostgreSQL, update DATABASE_URL in backend\.env
 ) else (
     echo [OK] backend\.env already exists
 )

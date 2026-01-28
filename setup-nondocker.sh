@@ -27,8 +27,17 @@ echo "✅ Node.js $NODE_VERSION found"
 # Create .env file
 if [ ! -f backend/.env ]; then
     echo "📝 Creating backend/.env..."
-    cp backend/.env.example backend/.env
-    echo "   ℹ️  Edit backend/.env with your settings if needed"
+    cat > backend/.env << 'EOF'
+# Environment variables for development with SQLite
+ENVIRONMENT=development
+DATABASE_URL=sqlite:///./fiber_db.sqlite
+SECRET_KEY=your-secret-key-change-in-production
+UPLOAD_DIR=./uploads
+MAX_UPLOAD_SIZE=524288000
+CORS_ORIGINS=http://localhost:3000,http://localhost:8000,http://localhost:4200,http://127.0.0.1:3000,http://127.0.0.1:8000
+EOF
+    echo "   ✅ Created with SQLite (development mode)"
+    echo "   ℹ️  For production with PostgreSQL, update DATABASE_URL in backend/.env"
 else
     echo "✅ backend/.env already exists"
 fi
