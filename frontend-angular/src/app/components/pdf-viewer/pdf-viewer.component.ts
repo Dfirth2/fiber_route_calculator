@@ -434,10 +434,7 @@ export class PDFViewerComponent implements OnInit, OnChanges {
     this.mode = next;
     this.isPanning = false;
     this.lastMouse = { x: 0, y: 0 }; // Reset mouse position to prevent stale pan data
-    // Reset pan offset when entering non-pan modes
-    if (next !== 'pan') {
-      this.panOffset = { x: 0, y: 0 };
-    }
+    // Keep panOffset preserved to maintain PDF position when switching modes
     // Clear drawing path only when switching to incompatible modes (not when switching to/from pan)
     if (next !== 'fiber' && next !== 'conduit' && next !== 'pan') {
       this.drawingPath = [];

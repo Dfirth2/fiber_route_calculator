@@ -14,5 +14,5 @@ COPY . .
 # Expose Angular dev server port
 EXPOSE 4200
 
-# Start Angular dev server
+# Start Angular dev server with no caching
 CMD ["npm", "start"]

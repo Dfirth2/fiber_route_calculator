@@ -141,3 +141,33 @@ A web application for measuring fiber routes from subdivision plats. Upload a PD
   - Conduit endpoint validates terminal and drop pedestal existence (404 prevention)
   - All endpoints properly cascade delete related data when project is deleted
 
+## Update 6 - Production Deployment & Interaction Fixes
+- **CORS and API Configuration**:
+  - Fixed 404 errors when accessing PDF endpoint through Tailscale hostname
+  - Updated frontend API URL construction to use nginx proxy (`/api`) in production
+  - Added Tailscale hostname to CORS_ORIGINS in backend configuration
+  - Frontend now correctly uses relative paths when not on localhost
+  - PDF URLs properly constructed for both development and production environments
+  - Removed hardcoded port 8000 references in production (uses nginx on port 80)
+- **PDF Pan/Zoom Interaction**:
+  - Fixed PDF snapping to top-left corner when switching between tools
+  - Removed `panOffset` reset in `setMode()` function to maintain PDF position
+  - PDF position now preserved when switching from pan to calibrate/equipment/fiber modes
+  - Users can zoom to area of interest and switch tools without losing position
+- **Erase Functionality**:
+  - Fixed erase mode unable to detect items after panning
+  - Moved mouse event handlers from outer container to transformed wrapper div
+  - Click coordinates now properly aligned with canvas content accounting for pan transform
+  - Erase works correctly regardless of zoom level or pan position
+- **Marker Deletion**:
+  - Fixed 404 errors when attempting to delete markers
+  - Corrected `syncedTerminalsList` and `syncedDropsList` to use actual database IDs
+  - Previously used array indices as marker IDs, causing database lookup failures
+  - Now properly passes marker ID, coordinates, and marker_type from database
+  - Delete operations successfully remove markers from backend and update UI
+- **Code Architecture**:
+  - Improved coordinate transformation handling in mouse event processing
+  - Better separation between canvas coordinate space and screen space
+  - Mouse handlers attached to correct DOM elements for transform calculations
+  - Enhanced reliability of click detection for all interactive elements
+

@@ -83,16 +83,16 @@
   <!-- PDF Viewer -->
   <div
     class="relative bg-gray-100 flex-1 overflow-hidden flex items-center justify-center"
-    (mousedown)="onMouseDown($event)"
-    (mousemove)="onMouseMove($event)"
-    (mouseup)="onMouseUp()"
-    (mouseleave)="onMouseUp()"
   >
     <div
       #wrapper
       class="transition-transform"
       [style.transform]="getTransform()"
       [style.transitionDuration]="isPanning ? '0ms' : '100ms'"
+      (mousedown)="onMouseDown($event)"
+      (mousemove)="onMouseMove($event)"
+      (mouseup)="onMouseUp()"
+      (mouseleave)="onMouseUp()"
     >
       <canvas #pdfCanvas class="bg-white block" [style.cursor]="isPanning ? 'grabbing' : 'grab'"></canvas>
       <canvas

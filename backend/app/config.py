@@ -25,7 +25,7 @@ class Settings(BaseSettings):
     MAX_UPLOAD_SIZE: int = 500 * 1024 * 1024  # 500MB
     
     # CORS - can be a JSON array string or comma-separated string
-    CORS_ORIGINS: Union[List[str], str] = "http://localhost:3000,http://localhost:8000,http://localhost:5173,http://piwebhost.local,http://piwebhost.local:3000,http://piwebhost.local:80,http://127.0.0.1:3000,http://127.0.0.1:80"
+    CORS_ORIGINS: Union[List[str], str] = "http://localhost:3000,http://localhost:8000,http://localhost:5173,http://piwebhost.local,http://piwebhost.local:3000,http://piwebhost.local:80,http://127.0.0.1:3000,http://127.0.0.1:80,http://piwebhost.narwhal-oratrice.ts.net,http://piwebhost.narwhal-oratrice.ts.net:80"
     
     @field_validator('CORS_ORIGINS', mode='before')
     @classmethod

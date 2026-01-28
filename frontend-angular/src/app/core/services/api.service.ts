@@ -10,13 +10,13 @@ export class ApiService {
 
   constructor(private http: HttpClient) {
     // Build API URL dynamically based on current location
-    // If in development, use the configured port; if in production, use relative path
+    // Use relative path for production (reverse proxy) and absolute path for local development
     if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
       // Local development - backend on port 8000
       this.apiUrl = `${window.location.protocol}//${window.location.hostname}:8000/api`;
     } else {
-      // Production - backend on same host/port (proxied through reverse proxy or same origin)
-      this.apiUrl = `${window.location.protocol}//${window.location.host}/api`;
+      // Production - use relative path (requests go through reverse proxy on same port)
+      this.apiUrl = '/api';
     }
   }
 
