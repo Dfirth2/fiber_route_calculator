@@ -51,6 +51,10 @@
             [class.bg-blue-600]="mode==='drop'"
             [class.text-white]="mode==='drop'"
             class="block w-full text-left px-4 py-2 hover:bg-gray-100 border-b">Drop Pedestal</button>
+          <button (click)="setMode('handhole'); showEquipmentMenu = false"
+            [class.bg-blue-600]="mode==='handhole'"
+            [class.text-white]="mode==='handhole'"
+            class="block w-full text-left px-4 py-2 hover:bg-gray-100 border-b">Handhole</button>
           <button (click)="setMode('conduit'); showEquipmentMenu = false"
             [class.bg-blue-600]="mode==='conduit'"
             [class.text-white]="mode==='conduit'"

@@ -40,12 +40,14 @@ import { DrawingCanvasComponent } from '../drawing-canvas/drawing-canvas.compone
           [projectId]="projectId"
           [syncedTerminals]="syncedTerminalsList"
           [syncedDrops]="syncedDropsList"
+          [syncedHandholes]="syncedHandholesList"
           [syncedPolylines]="syncedPolylinesList"
           [syncedConduits]="syncedConduitsList"
           (canvasReady)="onCanvasReady($event)"
           (polylinesChanged)="onPolylinesChanged($event)"
           (terminalsChanged)="onTerminalsChanged($event)"
           (dropsChanged)="onDropsChanged($event)"
+          (handholesChanged)="onHandholesChanged($event)"
           (conduitsChanged)="onConduitsChanged($event)"
           (currentPageChanged)="onCurrentPageChanged($event)"
         ></app-pdf-viewer>
@@ -115,15 +117,8 @@ import { DrawingCanvasComponent } from '../drawing-canvas/drawing-canvas.compone
             <div *ngIf="syncedTerminalsList.length; else noTerminals" class="space-y-2">
               <div *ngFor="let t of syncedTerminalsList; let i = index" class="bg-gray-50 p-2 rounded border-l-4 border-green-500">
                 <div class="flex justify-between items-center text-sm">
-                  <span class="font-medium">Terminal {{ getLabel(terminals.indexOf(t)) }}</span>
-                  <span *ngIf="getTerminalAssignmentCount(t.id) > 0" class="text-xs bg-green-100 text-green-800 px-2 py-1 rounded">{{ getTerminalAssignmentCount(t.id) }} assign</span>
-                </div>
-                <div *ngIf="getConnectedDrops(t.id).length > 0" class="mt-2 ml-2 border-l-2 border-gray-300 pl-2 space-y-1">
-                  <div class="text-xs text-gray-600 font-semibold">Connected:</div>
-                  <div *ngFor="let drop of getConnectedDrops(t.id); let di = index" class="text-xs text-gray-700">
-                    <span>→ Drop Ped {{ getLabel(drops.indexOf(drop)) }}</span>
-                    <span *ngIf="getDropAssignmentCount(drop.id) > 0" class="text-xs bg-blue-100 text-blue-800 px-1 rounded">{{ getDropAssignmentCount(drop.id) }}</span>
-                  </div>
+                  <span class="font-medium">Terminal {{ getLabel(i) }}</span>
+                  <span *ngIf="getTerminalAssignmentCount(t.id) > 0" class="text-xs bg-green-100 text-green-800 px-2 py-1 rounded">{{ getTerminalAssignmentCount(t.id) }} assigned</span>
                 </div>
               </div>
             </div>
@@ -140,8 +135,7 @@ import { DrawingCanvasComponent } from '../drawing-canvas/drawing-canvas.compone
             <div *ngIf="syncedDropsList.length; else noDrops" class="space-y-2">
               <div *ngFor="let d of syncedDropsList; let i = index" class="bg-gray-50 p-2 rounded border-l-4 border-purple-500">
                 <div class="flex justify-between items-center text-sm">
-                  <span class="font-medium">Drop Ped {{ getLabel(drops.indexOf(d)) }}</span>
-                  <span *ngIf="getDropAssignmentCount(d.id) > 0" class="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded">{{ getDropAssignmentCount(d.id) }} assign</span>
+                  <span class="font-medium">Drop Ped {{ getLabel(i) }}</span>
                 </div>
               </div>
             </div>
@@ -179,6 +173,11 @@ import { DrawingCanvasComponent } from '../drawing-canvas/drawing-canvas.compone
           </div>
         </div>
 
+        <div class="space-y-2">
+          <div class="font-semibold text-sm text-gray-800 hover:bg-gray-100 p-2 rounded flex justify-between items-center">
+            <span>Handholes ({{ syncedHandholesList.length }})</span>
+          </div>
+        </div>
 
       </div>
 
@@ -284,8 +283,7 @@ export class ProjectEditorComponent implements OnInit {
       const connectedDropIds: number[] = [];
       
       // Find all conduits that start from this terminal
-      const dropConduitMetadata = (this.stateService as any).conduitMetadata || [];
-      dropConduitMetadata.forEach((meta: any) => {
+      this.conduitMetadata.forEach((meta: any) => {
         if (meta.fromType === 'terminal' && meta.fromId === terminal.id && meta.toType === 'drop') {
           connectedDropIds.push(meta.toId);
         }
@@ -399,10 +397,48 @@ export class ProjectEditorComponent implements OnInit {
 
   loadProjectData() {
     if (!this.projectId) return;
-    this.apiService.getMarkers(this.projectId).subscribe((markers) => {
+    
+    const projectId = this.projectId; // Capture for type safety
+    
+    // Load markers first, then load conduits (to ensure marker coordinates are available)
+    this.apiService.getMarkers(projectId).subscribe((markers) => {
       this.markers = markers;
       this.stateService.setMarkers(markers);
+      
+      // Now that markers are loaded, load conduits which need marker coordinates
+      this.apiService.getConduits(projectId).subscribe((conduits) => {
+        this.conduits = conduits;
+        this.stateService.setConduits(conduits);
+        
+        // Transform database conduits to metadata format for relationship building
+        this.conduitMetadata = conduits.map((c: any) => {
+          // Find the terminal and drop markers to get their coordinates
+          const terminalMarker = this.markers.find(m => m.id === c.terminal_id);
+          const dropMarker = this.markers.find(m => m.id === c.drop_ped_id);
+          
+          return {
+            fromId: c.terminal_id,
+            fromType: 'terminal' as 'terminal' | 'drop',
+            fromX: terminalMarker?.x,
+            fromY: terminalMarker?.y,
+            toId: c.drop_ped_id,
+            toType: 'drop' as 'terminal' | 'drop',
+            toX: dropMarker?.x,
+            toY: dropMarker?.y,
+            lengthFt: c.footage,
+            pageNumber: c.page_number
+          };
+        });
+        
+        // Rebuild drop conduits display list
+        this.onConduitsChanged(this.conduitMetadata);
+        
+        // Build relationships from loaded conduits
+        this.buildRelationshipMap();
+      });
     });
+    
+    // Load polylines independently (doesn't depend on markers)
     this.apiService.getPolylines(this.projectId).subscribe((polylines) => {
       // Add type field based on name for proper rendering
       this.polylines = polylines.map((p: any) => ({
@@ -411,36 +447,8 @@ export class ProjectEditorComponent implements OnInit {
       }));
       this.stateService.setPolylines(this.polylines);
     });
-    this.apiService.getConduits(this.projectId).subscribe((conduits) => {
-      this.conduits = conduits;
-      this.stateService.setConduits(conduits);
-      
-      // Transform database conduits to metadata format for relationship building
-      this.conduitMetadata = conduits.map((c: any) => {
-        // Find the terminal and drop markers to get their coordinates
-        const terminalMarker = this.markers.find(m => m.id === c.terminal_id);
-        const dropMarker = this.markers.find(m => m.id === c.drop_ped_id);
-        
-        return {
-          fromId: c.terminal_id,
-          fromType: 'terminal',
-          fromX: terminalMarker?.x,
-          fromY: terminalMarker?.y,
-          toId: c.drop_ped_id,
-          toType: 'drop',
-          toX: dropMarker?.x,
-          toY: dropMarker?.y,
-          lengthFt: c.footage,
-          pageNumber: c.page_number
-        };
-      });
-      
-      // Rebuild drop conduits display list
-      this.onConduitsChanged(this.conduitMetadata);
-      
-      // Build relationships from loaded conduits
-      this.buildRelationshipMap();
-    });
+    
+    // Load marker links independently
     this.apiService.getMarkerLinks(this.projectId).subscribe((links) => {
       this.markerLinks = links;
       this.stateService.setMarkerLinks(links);
@@ -459,15 +467,24 @@ export class ProjectEditorComponent implements OnInit {
 
   onPolylinesChanged(polylines: any[]) {
     // Update polylines with the local drawing data from pdf-viewer
-    this.polylines = polylines.map((p, idx) => ({
-      id: this.polylines.find(pl => pl.length_ft === p.lengthFt && pl.name?.includes(p.type === 'fiber' ? 'Fiber' : 'Conduit'))?.id || -idx - 1,
-      project_id: this.projectId || 0,
-      page_number: p.pageNumber || 1,
-      name: p.type === 'fiber' ? `Fiber Route ${idx + 1}` : `Drop Conduit ${idx + 1}`,
-      points: p.points,
-      length_ft: p.lengthFt,
-      type: p.type as 'fiber' | 'conduit'
-    })) as any;
+    // Use separate counters for fiber routes and drop conduits
+    let fiberCount = 0;
+    let conduitCount = 0;
+    
+    this.polylines = polylines.map((p, idx) => {
+      const isFiber = p.type === 'fiber';
+      const counter = isFiber ? ++fiberCount : ++conduitCount;
+      
+      return {
+        id: this.polylines.find(pl => pl.length_ft === p.lengthFt && pl.name?.includes(p.type === 'fiber' ? 'Fiber' : 'Conduit'))?.id || -idx - 1,
+        project_id: this.projectId || 0,
+        page_number: p.pageNumber || 1,
+        name: isFiber ? `Fiber Route ${counter}` : `Drop Conduit ${counter}`,
+        points: p.points,
+        length_ft: p.lengthFt,
+        type: p.type as 'fiber' | 'conduit'
+      };
+    }) as any;
   }
 
   onTerminalsChanged(terminals: any[]) {
@@ -520,10 +537,39 @@ export class ProjectEditorComponent implements OnInit {
     this.markers = [...existingTerminals, ...dropMarkers];
   }
 
+  onHandholesChanged(handholes: any[]) {
+    // Update markers with the local handhole data from pdf-viewer
+    // Build map of existing handholes by position for accurate matching
+    const handholeMarkers = handholes.map((h) => {
+      // Find existing handhole at same position
+      const existingHandhole = this.markers.find(m => 
+        m.marker_type === 'handhole' && m.x === h.x && m.y === h.y
+      );
+      return {
+        id: existingHandhole?.id || h.id || -(2000000 + Math.floor(Math.random() * 999999)), // Use existing, pdf-viewer's, or generate new
+        project_id: this.projectId || 0,
+        page_number: 1,
+        x: h.x,
+        y: h.y,
+        marker_type: 'handhole'
+      };
+    });
+    
+    // Get existing terminals and drops to preserve them
+    const existingTerminals = this.markers.filter(m => m.marker_type === 'terminal');
+    const existingDrops = this.markers.filter(m => m.marker_type === 'dropPed' || m.marker_type === 'drop');
+    
+    // Merge terminals, drops, and handholes
+    this.markers = [...existingTerminals, ...existingDrops, ...handholeMarkers];
+  }
+
   onConduitsChanged(conduits: any[]) {
     // Store the raw metadata for saving later
     this.conduitMetadata = conduits;
     console.log('Conduits changed, metadata:', this.conduitMetadata);
+    
+    // Rebuild relationship map to update assignment counts
+    this.buildRelationshipMap();
     
     // Update dropConduits with formatted conduit data
     const epsilon = 0.01;
@@ -554,12 +600,16 @@ export class ProjectEditorComponent implements OnInit {
         toMarker = this.markers.find(m => m.id === meta.toId);
       }
       
-      // Get labels based on marker type
+      // Get labels based on marker type and position in their respective arrays
       const fromLabel = fromMarker 
-        ? `${fromMarker.marker_type === 'terminal' ? 'Terminal' : 'Drop Ped'} "${this.getLabel(this.markers.indexOf(fromMarker))}"`
+        ? `${fromMarker.marker_type === 'terminal' ? 'Terminal' : 'Drop Ped'} "${this.getLabel(
+            fromMarker.marker_type === 'terminal' 
+              ? this.terminals.indexOf(fromMarker)
+              : this.drops.indexOf(fromMarker)
+          )}"`
         : 'Unknown';
       const toLabel = toMarker
-        ? `Drop Ped "${this.getLabel(this.markers.indexOf(toMarker))}"`
+        ? `Drop Ped "${this.getLabel(this.drops.indexOf(toMarker))}"`
         : 'Unknown';
       
       return {
@@ -773,6 +823,10 @@ export class ProjectEditorComponent implements OnInit {
     return this.markers.filter(m => m.marker_type === 'drop' || m.marker_type === 'dropPed');
   }
 
+  get handholes(): Marker[] {
+    return this.markers.filter(m => m.marker_type === 'handhole');
+  }
+
   get syncedTerminalsList(): any[] {
     // Filter to only show terminals from the current page
     return this.terminals
@@ -787,9 +841,23 @@ export class ProjectEditorComponent implements OnInit {
       .map((d) => ({x: d.x, y: d.y, id: d.id, marker_type: d.marker_type}));
   }
 
-  get syncedPolylinesList(): Polyline[] {
-    // Filter to only show polylines from the current page
-    return this.polylines.filter(p => !p.page_number || p.page_number === this.currentPdfPage);
+  get syncedHandholesList(): any[] {
+    // Filter to only show handholes from the current page
+    return this.handholes
+      .filter(h => !h.page_number || h.page_number === this.currentPdfPage)
+      .map((h) => ({x: h.x, y: h.y, id: h.id, marker_type: h.marker_type}));
+  }
+
+  get syncedPolylinesList(): any[] {
+    // Filter to only show polylines from the current page and transform to pdf-viewer format
+    return this.polylines
+      .filter(p => !p.page_number || p.page_number === this.currentPdfPage)
+      .map(p => ({
+        points: p.points,
+        lengthFt: p.length_ft,  // Transform from snake_case to camelCase for pdf-viewer
+        type: p.type,
+        pageNumber: p.page_number
+      }));
   }
 
   get syncedConduitsList(): any[] {
@@ -798,7 +866,7 @@ export class ProjectEditorComponent implements OnInit {
   }
 
   get fiberSegments(): Polyline[] {
-    return this.polylines.filter(p => (!p.type || p.type === 'fiber') && (!p.page_number || p.page_number === this.currentPdfPage));
+    return this.polylines.filter(p => p.type === 'fiber' && (!p.page_number || p.page_number === this.currentPdfPage));
   }
 
   get filteredDropConduits(): { index: number; from: string; to: string; lengthFt: number; pageNumber?: number }[] {
