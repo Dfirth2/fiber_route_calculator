@@ -28,6 +28,7 @@ export class PDFViewerComponent implements OnInit, OnChanges {
   @Input() projectId: number | null = null;
   @Input() syncedTerminals: any[] = [];
   @Input() syncedDrops: any[] = [];
+  @Input() syncedHandholes: any[] = [];
   @Input() syncedPolylines: any[] = [];
   @Input() syncedConduits: any[] = [];
 
@@ -38,7 +39,7 @@ export class PDFViewerComponent implements OnInit, OnChanges {
   isPanning = false;
   Math = Math;
 
-  mode: 'pan' | 'calibrate' | 'fiber' | 'conduit' | 'terminal' | 'drop' | 'assign' | 'erase' = 'pan';
+  mode: 'pan' | 'calibrate' | 'fiber' | 'conduit' | 'terminal' | 'drop' | 'handhole' | 'assign' | 'erase' = 'pan';
   calibrationPoints: { x: number; y: number }[] = [];
   scaleFeetPerPixel: number | null = null;
   drawingPath: { x: number; y: number }[] = [];
@@ -49,6 +50,7 @@ export class PDFViewerComponent implements OnInit, OnChanges {
   totalConduitFeet = 0;
   terminals: { id: number; x: number; y: number }[] = [];
   drops: { id: number; x: number; y: number }[] = [];
+  handholes: { id: number; x: number; y: number }[] = [];
   selectedEndpoint: { point: { x: number; y: number }; type: 'terminal' | 'drop' } | null = null;
   assignments: Assignment[] = [];
   selectedMarkerForAssign: { id: number; x: number; y: number; type: 'terminal' | 'drop' } | null = null;
@@ -69,6 +71,7 @@ export class PDFViewerComponent implements OnInit, OnChanges {
   @Output() polylinesChanged = new EventEmitter<any[]>();
   @Output() terminalsChanged = new EventEmitter<any[]>();
   @Output() dropsChanged = new EventEmitter<any[]>();
+  @Output() handholesChanged = new EventEmitter<any[]>();
   @Output() conduitsChanged = new EventEmitter<any[]>();
   @Output() currentPageChanged = new EventEmitter<number>();
 
@@ -108,6 +111,14 @@ export class PDFViewerComponent implements OnInit, OnChanges {
     // Always sync drops from parent (whether projectId exists or not)
     if (changes['syncedDrops'] && this.syncedDrops) {
       this.drops = this.syncedDrops.map(d => ({...d})); // Clone to avoid reference issues
+      if (!this.projectId) {
+        this.saveDrawingData();
+      }
+      this.redrawOverlay();
+    }
+    // Always sync handholes from parent (whether projectId exists or not)
+    if (changes['syncedHandholes'] && this.syncedHandholes) {
+      this.handholes = this.syncedHandholes.map(h => ({...h})); // Clone to avoid reference issues
       if (!this.projectId) {
         this.saveDrawingData();
       }
@@ -250,6 +261,22 @@ export class PDFViewerComponent implements OnInit, OnChanges {
       return;
     }
 
+    if (this.mode === 'handhole') {
+      this.isPanning = false;
+      this.lastMouse = { x: 0, y: 0 }; // Reset lastMouse to prevent stale coordinates
+      const marker = { x: pdfPoint.x, y: pdfPoint.y };
+      if (this.projectId) {
+        this.saveMarkerToBackend(marker, 'handhole');
+      } else {
+        const maxId = this.handholes.length > 0 ? Math.max(...this.handholes.map(h => h.id)) : 0;
+        this.handholes.push({ id: maxId + 1, x: pdfPoint.x, y: pdfPoint.y });
+        this.handholesChanged.emit(this.handholes);
+        this.saveDrawingData();
+        this.redrawOverlay();
+      }
+      return;
+    }
+
     if (this.mode === 'calibrate') {
       this.calibrationPoints.push(pdfPoint);
       if (this.calibrationPoints.length === 2) {
@@ -283,23 +310,33 @@ export class PDFViewerComponent implements OnInit, OnChanges {
       this.isPanning = false;
       const start = this.findNearestEndpoint(pdfPoint);
       if (!this.selectedEndpoint) {
-        if (start) {
-          this.selectedEndpoint = start;
+        // First click: must be a terminal
+        if (!start || start.type !== 'terminal') {
+          this.showToast('Pick a terminal first', 2200, 'error');
+          this.selectedEndpoint = null;
           this.redrawOverlay();
+          return;
         }
+        // Check if terminal already has 2 conduits
+        const terminalId = this.findMarkerByPoint(start.point, 'terminal')?.id;
+        const attachedConduits = this.conduitMetadata.filter(c => c.fromId === terminalId || c.toId === terminalId).length;
+        if (attachedConduits >= 2) {
+          this.showToast('A terminal can have a maximum of two conduits', 2500, 'error');
+          this.selectedEndpoint = null;
+          this.redrawOverlay();
+          return;
+        }
+        this.selectedEndpoint = start;
+        this.redrawOverlay();
         return;
       }
 
-      // second click must land on a drop pedestal
+      // Second click: must be a drop pedestal
       const end = this.findNearestEndpoint(pdfPoint, 'drop');
-      if (!end) {
-        this.showToast('Select a drop pedestal to complete the conduit');
-        return;
-      }
-
-      // enforce terminal->drop or drop->drop; block terminal->terminal
-      if (this.selectedEndpoint.type === 'terminal' && end.type === 'terminal') {
-        this.showToast('Cannot connect terminal to terminal');
+      if (!end || end.type !== 'drop') {
+        this.showToast('You must select a drop pedestal as the second point', 2500, 'error');
+        this.selectedEndpoint = null;
+        this.redrawOverlay();
         return;
       }
 
@@ -436,7 +473,7 @@ export class PDFViewerComponent implements OnInit, OnChanges {
     this.renderPage();
   }
 
-  setMode(next: 'pan' | 'calibrate' | 'fiber' | 'conduit' | 'terminal' | 'drop' | 'assign' | 'erase') {
+  setMode(next: 'pan' | 'calibrate' | 'fiber' | 'conduit' | 'terminal' | 'drop' | 'handhole' | 'assign' | 'erase') {
     // Require calibration before using drawing tools
     if (!this.scaleFeetPerPixel && next !== 'calibrate' && next !== 'pan' && next !== 'erase') {
       this.showToast('Please calibrate the scale first');
@@ -705,6 +742,7 @@ export class PDFViewerComponent implements OnInit, OnChanges {
     // markers
     this.terminals.forEach((pt, idx) => this.drawTerminal(pt, idx));
     this.drops.forEach((pt, idx) => this.drawDrop(pt, '#a855f7', idx));
+    this.handholes.forEach((pt, idx) => this.drawHandhole(pt, idx));
 
     // assignments (arrows from markers to lots)
     this.assignments.forEach(assignment => {
@@ -1013,6 +1051,27 @@ export class PDFViewerComponent implements OnInit, OnChanges {
     this.overlayCtx.fillText(letter, centerX, centerY);
   }
 
+  private drawHandhole(pt: { x: number; y: number }, index: number) {
+    if (!this.overlayCtx) return;
+    const centerX = pt.x * this.zoom;
+    const centerY = pt.y * this.zoom;
+    const size = 14;
+    
+    // Draw outer purple square
+    this.overlayCtx.fillStyle = '#a855f7';
+    this.overlayCtx.fillRect(centerX - size, centerY - size, size * 2, size * 2);
+    
+    // Draw white border
+    this.overlayCtx.strokeStyle = '#ffffff';
+    this.overlayCtx.lineWidth = 2;
+    this.overlayCtx.strokeRect(centerX - size, centerY - size, size * 2, size * 2);
+    
+    // Draw hollow center (white square inside)
+    const innerSize = 6;
+    this.overlayCtx.fillStyle = '#ffffff';
+    this.overlayCtx.fillRect(centerX - innerSize, centerY - innerSize, innerSize * 2, innerSize * 2);
+  }
+
   private drawMarker(pt: { x: number; y: number }, color: string) {
     if (!this.overlayCtx) return;
     this.overlayCtx.fillStyle = color;
@@ -1138,6 +1197,9 @@ export class PDFViewerComponent implements OnInit, OnChanges {
           if (type === 'terminal') {
             this.terminals.push(markerObj);
             this.terminalsChanged.emit(this.terminals);
+          } else if (type === 'handhole') {
+            this.handholes.push(markerObj);
+            this.handholesChanged.emit(this.handholes);
           } else {
             this.drops.push(markerObj);
             this.dropsChanged.emit(this.drops);

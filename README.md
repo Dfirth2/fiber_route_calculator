@@ -199,3 +199,55 @@ A web application for measuring fiber routes from subdivision plats. Upload a PD
   - Supports complex subdivision plats spanning multiple pages with different scales
   - Clear feedback when page needs calibration
 
+## Update 8 - Handhole Equipment Type & Conduit Refinements
+- **New Handhole Equipment Type**:
+  - Added handhole as third equipment type (alongside terminals and drop pedestals)
+  - Handholes render as purple squares with hollow white center for visual distinction
+  - Handholes are material-countable (appear in Equipment Summary)
+  - Handholes can be assigned to lots via assignment arrows
+  - Handholes explicitly cannot be endpoints for drop conduits (enforced in frontend)
+  - Handholes not displayed in sidebar equipment list but included in aggregate counts
+- **Handholes in Sidebar**:
+  - Handholes count displayed in sidebar after Drop Conduits section
+  - Shows total handhole count for current page (not expandable)
+  - Integrates cleanly with existing sidebar equipment layout
+  - Provides quick reference to handhole material count
+- **Conduit Logic Fixes**:
+  - Fixed conduit label pairing - terminals and drop pedestals now correctly paired
+  - Terminals now show proper assignment aggregation (direct assignments + connected drop ped assignments)
+  - Added validation modal for conduit creation with three required checks:
+    1. First point must be a terminal ("Pick a terminal first")
+    2. Terminal cannot have more than 2 conduits ("max two conduits")
+    3. Second point must be a drop pedestal ("must select a drop pedestal")
+  - Conduits now separately numbered from fiber routes ("Fiber Route 1, 2..." vs "Drop Conduit 1, 2...")
+- **Marker Preservation**:
+  - All marker types (terminals, drops, handholes) properly preserved during component updates
+  - Marker types cleanly separated in data structure via `marker_type` field
+  - Assignments work with all marker types for lot assignment workflows
+- **Polyline Improvements**:
+  - Fixed footage disappearing on second fiber route creation
+  - Polyline length property properly transformed to match PDF viewer expectations
+  - Multiple polylines now persist correctly across renders
+- **UI/UX Refinements**:
+  - Removed assignment badges from drop pedestals (rolled up to terminals)
+  - Removed "Connected Drops" nested list from sidebar (cleaner UI)
+  - Equipment type selection menu now includes "Handhole" option
+  - Conduit creation flow provides clear error messages for invalid connections
+- **Backend Marker System**:
+  - Generic marker system using `marker_type` field supports unlimited equipment types
+  - Backend already supports handhole storage without code changes
+  - Marker relationships (via `MarkerLink` table) support all marker types
+  - Database schema flexible for future equipment type additions
+- **Testing Coverage**:
+  - 8 comprehensive backend unit tests for handhole functionality
+  - Tests cover creation, retrieval, page filtering, deletion, assignments
+  - Tests enforce handhole constraints (no conduit endpoints)
+  - 25+ frontend unit tests for handhole placement, rendering, synchronization
+  - All tests passing with production-ready code quality
+- **Code Quality**:
+  - Separate marker arrays for terminals, drops, handholes with proper filtering
+  - Clean separation between equipment types in rendering and UI logic
+  - Type-safe TypeScript implementation with proper interfaces
+  - EventEmitter pattern for syncing markers between components
+  - Comprehensive test coverage ensures stability of new feature
+
