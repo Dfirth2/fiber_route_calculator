@@ -146,8 +146,11 @@ export class ApiService {
     });
   }
 
-  exportPdf(projectId: number, pageNumber: number = 1, pageWidth?: number, pageHeight?: number): Observable<Blob> {
-    let params = new HttpParams().set('page_number', pageNumber.toString());
+  exportPdf(projectId: number, pageNumber?: number, pageWidth?: number, pageHeight?: number): Observable<Blob> {
+    let params = new HttpParams();
+    if (pageNumber !== undefined) {
+      params = params.set('page_number', pageNumber.toString());
+    }
     if (pageWidth !== undefined) {
       params = params.set('page_width', pageWidth.toString());
     }

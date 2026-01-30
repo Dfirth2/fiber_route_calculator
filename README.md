@@ -251,3 +251,44 @@ A web application for measuring fiber routes from subdivision plats. Upload a PD
   - EventEmitter pattern for syncing markers between components
   - Comprehensive test coverage ensures stability of new feature
 
+## Update 9 - Enhanced Visual Rendering & Export Features
+- **Handhole Rendering Order**:
+  - Handholes now render first (bottom layer) so everything appears on top
+  - Polylines, conduits, and assignments render over handholes
+  - Terminals and drop pedestals render last (top layer) for maximum visibility
+  - Consistent rendering order across both PDF viewer and exported PDFs
+  - Eliminates visual confusion when handholes overlap with other elements
+- **Erase Tool Enhancements**:
+  - Erase tool now properly detects and deletes handholes
+  - Updated `findMarkerAtPoint` to check all three marker types (terminals, drops, handholes)
+  - Updated `deleteMarker` to handle handhole deletion with proper event emission
+  - Fixed TypeScript type signatures to include 'handhole' in marker union types
+  - Added detailed console logging for debugging marker detection
+  - Comprehensive deletion support for all drawable elements
+- **PDF Export Filename Customization**:
+  - Added modal dialog for custom PDF export filenames
+  - Default filename pre-populated with project name
+  - Users can edit filename before export
+  - Automatic .pdf extension handling (adds if missing)
+  - Filename sanitization to replace special characters with underscores
+  - Enter key support for quick export confirmation
+  - Clean modal UI matching existing project details dialog
+  - Export button disabled if filename is empty
+- **Export Filename Consistency**:
+  - CSV export uses sanitized project name: `{project_name}_report.csv`
+  - JSON export uses sanitized project name: `{project_name}_report.json`
+  - PDF export uses user-provided custom name or defaults to project name
+  - All filenames sanitized for cross-platform compatibility
+  - Special characters, spaces replaced with underscores in backend
+- **Drop Conduit Visual Fix**:
+  - Drop conduits in exported PDF now render as solid purple lines
+  - Removed dashed line pattern that was showing green fiber routes underneath
+  - Conduits maintain 3px line width for clear visibility
+  - Consistent purple color (#9333ea) across viewer and export
+- **Code Architecture**:
+  - Updated PDF overlay service with proper layer ordering
+  - Separated handhole rendering from other markers in export logic
+  - Added `projectName` property to project editor component
+  - Modal state management with `showPdfExportModal` flag
+  - `confirmPdfExport()` method handles validation and export flow
+  - Proper TypeScript typing for all new modal functionality

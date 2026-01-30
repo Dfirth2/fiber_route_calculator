@@ -57,10 +57,13 @@ def export_csv(
         slack_factor=slack_factor,
     )
     
+    # Sanitize project name for filename
+    safe_project_name = "".join(c if c.isalnum() or c in ('-', '_') else '_' for c in project.name)
+    
     return StreamingResponse(
         iter([csv_content]),
         media_type="text/csv",
-        headers={"Content-Disposition": f"attachment; filename={project.name}_report.csv"},
+        headers={"Content-Disposition": f"attachment; filename={safe_project_name}_report.csv"},
     )
 
 @router.get("/{project_id}/json")
@@ -108,21 +111,24 @@ def export_json(
         slack_factor=slack_factor,
     )
     
+    # Sanitize project name for filename
+    safe_project_name = "".join(c if c.isalnum() or c in ('-', '_') else '_' for c in project.name)
+    
     return StreamingResponse(
         iter([json_content]),
         media_type="application/json",
-        headers={"Content-Disposition": f"attachment; filename={project.name}_report.json"},
+        headers={"Content-Disposition": f"attachment; filename={safe_project_name}_report.json"},
     )
 
 @router.get("/{project_id}/pdf")
 def export_pdf_with_overlays(
     project_id: int,
-    page_number: int = Query(1, description="PDF page to export"),
+    page_number: int = Query(None, description="Specific page to export (default: all pages)"),
     page_width: float = Query(None, description="Rendered page width from frontend"),
     page_height: float = Query(None, description="Rendered page height from frontend"),
     db: Session = Depends(get_db),
 ):
-    """Export PDF with all drawn routes, markers, and annotations overlaid."""
+    """Export PDF with all drawn routes, markers, and annotations overlaid on all pages."""
     project = db.query(Project).filter(Project.id == project_id).first()
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
@@ -138,68 +144,64 @@ def export_pdf_with_overlays(
     marker_links = db.query(MarkerLink).join(Marker).filter(Marker.project_id == project_id).all()
     conduits = db.query(Conduit).filter(Conduit.project_id == project_id).all()
     
-    # Filter for the current page
-    polyline_data = [
-        {
-            "name": p.name,
-            "page_number": p.page_number,
-            "points": p.points,
-            "length_ft": p.length_ft,
-        }
-        for p in polylines
-        if p.page_number == page_number
-    ]
+    # Organize data by page number
+    all_data = {
+        "polylines": [
+            {
+                "name": p.name,
+                "page_number": p.page_number,
+                "points": p.points,
+                "length_ft": p.length_ft,
+            }
+            for p in polylines
+        ],
+        "markers": [
+            {
+                "id": m.id,
+                "x": m.x,
+                "y": m.y,
+                "type": m.marker_type,
+                "page_number": m.page_number,
+            }
+            for m in markers
+        ],
+        "marker_links": [
+            {
+                "markerId": ml.marker_id,
+                "to": {"x": ml.to_x, "y": ml.to_y},
+                "page_number": ml.page_number,
+            }
+            for ml in marker_links
+        ],
+        "conduits": [
+            {
+                "terminalId": c.terminal_id,
+                "dropPedId": c.drop_ped_id,
+                "footage": c.footage,
+                "page_number": c.page_number,
+            }
+            for c in conduits
+        ],
+    }
     
-    marker_data = [
-        {
-            "id": m.id,
-            "x": m.x,
-            "y": m.y,
-            "type": m.marker_type,
-            "page_number": m.page_number,
-        }
-        for m in markers
-        if m.page_number == page_number
-    ]
-    
-    link_data = [
-        {
-            "markerId": ml.marker_id,
-            "to": {"x": ml.to_x, "y": ml.to_y},
-            "page_number": ml.page_number,
-        }
-        for ml in marker_links
-        if ml.page_number == page_number
-    ]
-    
-    conduit_data = [
-        {
-            "terminalId": c.terminal_id,
-            "dropPedId": c.drop_ped_id,
-            "footage": c.footage,
-            "page_number": c.page_number,
-        }
-        for c in conduits
-        if c.page_number == page_number
-    ]
-    
-    # Create PDF with overlays
+    # Create PDF with overlays on all pages
     try:
         pdf_bytes = overlay_drawings_on_pdf(
             pdf_path,
-            polylines=polyline_data,
-            markers=marker_data,
-            marker_links=link_data,
-            conduits=conduit_data,
-            page_number=page_number,
+            all_data=all_data,
+            single_page=page_number,
             page_width=page_width,
             page_height=page_height,
         )
         
+        # Sanitize project name for filename (replace spaces and special chars)
+        safe_project_name = "".join(c if c.isalnum() or c in ('-', '_') else '_' for c in project.name)
+        filename = f"{safe_project_name}_annotated.pdf" if page_number is None else f"{safe_project_name}_page_{page_number}_annotated.pdf"
+        
         return StreamingResponse(
             iter([pdf_bytes]),
             media_type="application/pdf",
-            headers={"Content-Disposition": f"attachment; filename={project.name}_page_{page_number}_annotated.pdf"},
+            headers={"Content-Disposition": f"attachment; filename={filename}"},
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to generate PDF: {str(e)}")
