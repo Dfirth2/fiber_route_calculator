@@ -234,6 +234,43 @@ import { DrawingCanvasComponent } from '../drawing-canvas/drawing-canvas.compone
           </div>
         </div>
       </div>
+
+      <!-- PDF Export Filename Modal -->
+      <div *ngIf="showPdfExportModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div class="bg-white rounded-lg shadow-lg p-6 w-96">
+          <h3 class="text-xl font-bold text-gray-800 mb-4">Export PDF</h3>
+          
+          <div class="space-y-4">
+            <div>
+              <label class="text-sm font-medium text-gray-700 block mb-1">Filename:</label>
+              <input 
+                type="text" 
+                [(ngModel)]="pdfExportFilename"
+                class="w-full px-3 py-2 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                placeholder="Enter PDF filename"
+                (keyup.enter)="confirmPdfExport()"
+              />
+              <p class="text-xs text-gray-500 mt-1">The .pdf extension will be added automatically</p>
+            </div>
+          </div>
+          
+          <div class="flex justify-end gap-2 mt-6">
+            <button 
+              (click)="showPdfExportModal = false"
+              class="px-4 py-2 text-gray-700 border border-gray-300 rounded hover:bg-gray-50 font-medium"
+            >
+              Cancel
+            </button>
+            <button 
+              (click)="confirmPdfExport()"
+              [disabled]="!pdfExportFilename.trim()"
+              class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              Export
+            </button>
+          </div>
+        </div>
+      </div>
     </div>
   `,
   styles: [`
@@ -257,10 +294,13 @@ export class ProjectEditorComponent implements OnInit {
   conduitMetadata: { fromId: number; fromType: 'terminal' | 'drop'; fromX?: number; fromY?: number; toId: number; toType: 'terminal' | 'drop'; toX?: number; toY?: number; lengthFt: number; pageNumber: number }[] = [];
   conduitRelationships: { terminalId: number; dropPedIds: number[] }[] = []; // Tracks which drops connect to each terminal
   assignments: any[] = []; // Store assignments for counting
+  projectName: string = '';
   projectNumber: string = '';
   devlogNumber: string = '';
   ponCableName: string = '';
   showProjectDetailsModal: boolean = false;
+  showPdfExportModal: boolean = false;
+  pdfExportFilename: string = '';
   sidebarOpen: boolean = false;
   currentPdfPage: number = 1; // Track current page being viewed
   expandedSections: { [key: string]: boolean } = {
@@ -380,6 +420,7 @@ export class ProjectEditorComponent implements OnInit {
     this.apiService.getProject(this.projectId).subscribe(
       (project) => {
         this.stateService.setProject(project);
+        this.projectName = project.name || '';
         this.projectNumber = project.project_number || '';
         this.devlogNumber = project.devlog_number || '';
         this.ponCableName = project.pon_cable_name || '';
@@ -470,20 +511,39 @@ export class ProjectEditorComponent implements OnInit {
     // Use separate counters for fiber routes and drop conduits
     let fiberCount = 0;
     let conduitCount = 0;
+    let newPolylineId = -1;
     
     this.polylines = polylines.map((p, idx) => {
       const isFiber = p.type === 'fiber';
       const counter = isFiber ? ++fiberCount : ++conduitCount;
       
-      return {
-        id: this.polylines.find(pl => pl.length_ft === p.lengthFt && pl.name?.includes(p.type === 'fiber' ? 'Fiber' : 'Conduit'))?.id || -idx - 1,
-        project_id: this.projectId || 0,
-        page_number: p.pageNumber || 1,
-        name: isFiber ? `Fiber Route ${counter}` : `Drop Conduit ${counter}`,
-        points: p.points,
-        length_ft: p.lengthFt,
-        type: p.type as 'fiber' | 'conduit'
-      };
+      // Check if this polyline already exists in our list by comparing points
+      const existingPolyline = this.polylines.find(pl => 
+        pl.points === p.points || 
+        (Array.isArray(pl.points) && Array.isArray(p.points) && 
+         JSON.stringify(pl.points) === JSON.stringify(p.points))
+      );
+      
+      if (existingPolyline && existingPolyline.id) {
+        // Polyline already exists, keep its ID
+        return {
+          ...existingPolyline,
+          length_ft: p.lengthFt,
+          page_number: p.pageNumber || existingPolyline.page_number,
+          type: p.type
+        };
+      } else {
+        // New polyline, assign negative ID
+        return {
+          id: newPolylineId--,
+          project_id: this.projectId || 0,
+          page_number: p.pageNumber || 1,
+          name: isFiber ? `Fiber Route ${counter}` : `Drop Conduit ${counter}`,
+          points: p.points,
+          length_ft: p.lengthFt,
+          type: p.type as 'fiber' | 'conduit'
+        };
+      }
     }) as any;
   }
 
@@ -498,18 +558,21 @@ export class ProjectEditorComponent implements OnInit {
       return {
         id: existingTerminal?.id || t.id || Math.floor(Math.random() * -1000000), // Use existing, pdf-viewer's, or generate new
         project_id: this.projectId || 0,
-        page_number: 1,
+        page_number: this.currentPdfPage,
         x: t.x,
         y: t.y,
         marker_type: 'terminal'
       };
     });
     
-    // Get existing drops to preserve them
-    const existingDrops = this.markers.filter(m => m.marker_type === 'dropPed' || m.marker_type === 'drop');
+    // Preserve markers from OTHER pages and non-terminal markers from current page
+    const markersFromOtherPages = this.markers.filter(m => m.page_number !== this.currentPdfPage);
+    const currentPageNonTerminals = this.markers.filter(m => 
+      m.page_number === this.currentPdfPage && m.marker_type !== 'terminal'
+    );
     
-    // Merge terminals and drops
-    this.markers = [...terminalMarkers, ...existingDrops];
+    // Merge: markers from other pages + current page non-terminals + new terminals
+    this.markers = [...markersFromOtherPages, ...currentPageNonTerminals, ...terminalMarkers];
   }
 
   onDropsChanged(drops: any[]) {
@@ -523,18 +586,21 @@ export class ProjectEditorComponent implements OnInit {
       return {
         id: existingDrop?.id || d.id || -(1000000 + Math.floor(Math.random() * 999999)), // Use existing, pdf-viewer's, or generate new
         project_id: this.projectId || 0,
-        page_number: 1,
+        page_number: this.currentPdfPage,
         x: d.x,
         y: d.y,
         marker_type: 'dropPed'
       };
     });
     
-    // Get existing terminals to preserve them
-    const existingTerminals = this.markers.filter(m => m.marker_type === 'terminal');
+    // Preserve markers from OTHER pages and non-drop markers from current page
+    const markersFromOtherPages = this.markers.filter(m => m.page_number !== this.currentPdfPage);
+    const currentPageNonDrops = this.markers.filter(m => 
+      m.page_number === this.currentPdfPage && m.marker_type !== 'dropPed' && m.marker_type !== 'drop'
+    );
     
-    // Merge terminals and drops
-    this.markers = [...existingTerminals, ...dropMarkers];
+    // Merge: markers from other pages + current page non-drops + new drops
+    this.markers = [...markersFromOtherPages, ...currentPageNonDrops, ...dropMarkers];
   }
 
   onHandholesChanged(handholes: any[]) {
@@ -548,24 +614,28 @@ export class ProjectEditorComponent implements OnInit {
       return {
         id: existingHandhole?.id || h.id || -(2000000 + Math.floor(Math.random() * 999999)), // Use existing, pdf-viewer's, or generate new
         project_id: this.projectId || 0,
-        page_number: 1,
+        page_number: this.currentPdfPage,
         x: h.x,
         y: h.y,
         marker_type: 'handhole'
       };
     });
     
-    // Get existing terminals and drops to preserve them
-    const existingTerminals = this.markers.filter(m => m.marker_type === 'terminal');
-    const existingDrops = this.markers.filter(m => m.marker_type === 'dropPed' || m.marker_type === 'drop');
+    // Preserve markers from OTHER pages and non-handhole markers from current page
+    const markersFromOtherPages = this.markers.filter(m => m.page_number !== this.currentPdfPage);
+    const currentPageNonHandholes = this.markers.filter(m => 
+      m.page_number === this.currentPdfPage && m.marker_type !== 'handhole'
+    );
     
-    // Merge terminals, drops, and handholes
-    this.markers = [...existingTerminals, ...existingDrops, ...handholeMarkers];
+    // Merge: markers from other pages + current page non-handholes + new handholes
+    this.markers = [...markersFromOtherPages, ...currentPageNonHandholes, ...handholeMarkers];
   }
 
   onConduitsChanged(conduits: any[]) {
-    // Store the raw metadata for saving later
-    this.conduitMetadata = conduits;
+    // Preserve conduits from other pages, only update current page conduits
+    const conduitsFromOtherPages = this.conduitMetadata.filter(c => !c.pageNumber || c.pageNumber !== this.currentPdfPage);
+    const currentPageConduits = conduits.map(c => ({ ...c, pageNumber: this.currentPdfPage }));
+    this.conduitMetadata = [...conduitsFromOtherPages, ...currentPageConduits];
     console.log('Conduits changed, metadata:', this.conduitMetadata);
     
     // Rebuild relationship map to update assignment counts
@@ -849,20 +919,19 @@ export class ProjectEditorComponent implements OnInit {
   }
 
   get syncedPolylinesList(): any[] {
-    // Filter to only show polylines from the current page and transform to pdf-viewer format
-    return this.polylines
-      .filter(p => !p.page_number || p.page_number === this.currentPdfPage)
-      .map(p => ({
-        points: p.points,
-        lengthFt: p.length_ft,  // Transform from snake_case to camelCase for pdf-viewer
-        type: p.type,
-        pageNumber: p.page_number
-      }));
+    // Return ALL polylines (not filtered by page) so pdf-viewer can manage them across pages
+    // pdf-viewer will handle page filtering during rendering
+    return this.polylines.map(p => ({
+      points: p.points,
+      lengthFt: p.length_ft,  // Transform from snake_case to camelCase for pdf-viewer
+      type: p.type,
+      pageNumber: p.page_number
+    }));
   }
 
   get syncedConduitsList(): any[] {
-    // Filter to only show conduits from the current page
-    return this.conduitMetadata.filter(c => !c.pageNumber || c.pageNumber === this.currentPdfPage);
+    // Return ALL conduits (not filtered by page) so pdf-viewer can manage them across pages
+    return this.conduitMetadata;
   }
 
   get fiberSegments(): Polyline[] {
@@ -939,9 +1008,206 @@ export class ProjectEditorComponent implements OnInit {
 
   exportPdf() {
     if (!this.projectId) return;
-    this.apiService.exportPdf(this.projectId, 1, this.viewport?.pageWidth, this.viewport?.pageHeight).subscribe(
+    
+    // Set default filename to project name
+    this.pdfExportFilename = this.projectName || `project_${this.projectId}`;
+    
+    // Show the filename modal
+    this.showPdfExportModal = true;
+  }
+
+  confirmPdfExport() {
+    if (!this.projectId || !this.pdfExportFilename.trim()) return;
+    
+    this.showPdfExportModal = false;
+    
+    // Check if there are unsaved changes
+    const newMarkers = this.markers.filter(m => m.id < 0);
+    const newPolylines = this.polylines.filter(p => p.id < 0);
+    
+    // Check for unsaved conduits (those with markers that exist but might not be saved yet)
+    const unsavedConduits = this.conduitMetadata.filter(c => {
+      const fromMarker = this.markers.find(m => m.id === c.fromId);
+      const toMarker = this.markers.find(m => m.id === c.toId);
+      // Conduit is unsaved if markers don't exist or have negative IDs
+      return !fromMarker || !toMarker || fromMarker.id < 0 || toMarker.id < 0;
+    });
+    
+    const hasUnsavedChanges = newMarkers.length > 0 || newPolylines.length > 0 || unsavedConduits.length > 0;
+    
+    if (hasUnsavedChanges) {
+      // Save first, then export
+      console.log('Saving project before export...', {
+        newMarkers: newMarkers.length,
+        newPolylines: newPolylines.length,
+        unsavedConduits: unsavedConduits.length
+      });
+      this.saveProjectBeforeExport();
+    } else {
+      // No unsaved changes, export directly
+      this.performPdfExport();
+    }
+  }
+
+  private saveProjectBeforeExport() {
+    if (!this.projectId) return;
+
+    let saveCount = 0;
+    let errorCount = 0;
+    const newMarkers = this.markers.filter(m => !m.id || m.id < 0);
+    const newPolylines = this.polylines.filter(p => !p.id || p.id < 0);
+    
+    // Conduits to save: those where both markers exist and have positive IDs
+    const conduitsToSave = this.conduitMetadata.filter(c => {
+      const fromMarker = this.markers.find(m => m.id === c.fromId);
+      const toMarker = this.markers.find(m => m.id === c.toId);
+      return fromMarker && toMarker && fromMarker.id && fromMarker.id > 0 && toMarker.id && toMarker.id > 0;
+    });
+    
+    const totalItems = newMarkers.length + newPolylines.length + conduitsToSave.length;
+
+    console.log('Saving before export:', {
+      newMarkers: newMarkers.length,
+      newPolylines: newPolylines.length,
+      conduitsToSave: conduitsToSave.length,
+      totalItems
+    });
+
+    if (totalItems === 0) {
+      console.log('No items to save, proceeding with export');
+      this.performPdfExport();
+      return;
+    }
+
+    const checkComplete = () => {
+      console.log(`Save progress: ${saveCount}/${totalItems} saved, ${errorCount} errors`);
+      if (saveCount + errorCount === totalItems) {
+        if (errorCount === 0) {
+          console.log('All items saved successfully, proceeding with export');
+          this.performPdfExport();
+        } else {
+          alert(`Failed to save ${errorCount} items. Please fix errors before exporting.`);
+        }
+      }
+    };
+
+    // Save new markers
+    newMarkers.forEach(marker => {
+      this.apiService.addMarker(this.projectId || 0, {
+        x: marker.x,
+        y: marker.y,
+        marker_type: marker.marker_type,
+        page_number: marker.page_number
+      }).subscribe(
+        (savedMarker: any) => {
+          const oldId = marker.id;
+          marker.id = savedMarker.id;
+          
+          // Update conduit metadata with new marker IDs
+          this.conduitMetadata.forEach(meta => {
+            if (meta.fromId === oldId) meta.fromId = savedMarker.id;
+            if (meta.toId === oldId) meta.toId = savedMarker.id;
+          });
+          
+          saveCount++;
+          checkComplete();
+        },
+        (error: any) => {
+          console.error('Failed to save marker:', error);
+          errorCount++;
+          checkComplete();
+        }
+      );
+    });
+
+    // Save new polylines
+    newPolylines.forEach(polyline => {
+      this.apiService.addPolyline(this.projectId || 0, {
+        name: polyline.name,
+        points: polyline.points,
+        page_number: polyline.page_number
+      }).subscribe(
+        (savedPolyline: any) => {
+          polyline.id = savedPolyline.id;
+          polyline.length_ft = savedPolyline.length_ft;
+          saveCount++;
+          checkComplete();
+        },
+        (error: any) => {
+          console.error('Failed to save polyline:', error);
+          errorCount++;
+          checkComplete();
+        }
+      );
+    });
+
+    // Save conduits (only those with valid marker IDs)
+    conduitsToSave.forEach((meta, idx) => {
+      const epsilon = 0.01;
+      let fromMarker = null;
+      let toMarker = null;
+      
+      if (meta.fromX !== undefined && meta.fromY !== undefined) {
+        fromMarker = this.markers.find(m => 
+          Math.abs(m.x - (meta.fromX || 0)) < epsilon && 
+          Math.abs(m.y - (meta.fromY || 0)) < epsilon
+        );
+      }
+      
+      if (meta.toX !== undefined && meta.toY !== undefined) {
+        toMarker = this.markers.find(m => 
+          Math.abs(m.x - (meta.toX || 0)) < epsilon && 
+          Math.abs(m.y - (meta.toY || 0)) < epsilon
+        );
+      }
+      
+      if (!fromMarker && meta.fromId) {
+        fromMarker = this.markers.find(m => m.id === meta.fromId);
+      }
+      if (!toMarker && meta.toId) {
+        toMarker = this.markers.find(m => m.id === meta.toId);
+      }
+      
+      if (!fromMarker || !toMarker || fromMarker.id < 0 || toMarker.id < 0) {
+        console.warn(`Skipping conduit ${idx}: Markers not ready (fromId: ${fromMarker?.id}, toId: ${toMarker?.id})`);
+        errorCount++;
+        checkComplete();
+        return;
+      }
+
+      this.apiService.addConduit(this.projectId || 0, {
+        terminal_id: fromMarker.id,
+        drop_ped_id: toMarker.id,
+        page_number: meta.pageNumber
+      }).subscribe(
+        () => {
+          console.log(`Conduit saved: terminal ${fromMarker.id} -> drop ${toMarker.id}`);
+          saveCount++;
+          checkComplete();
+        },
+        (error: any) => {
+          console.error('Failed to save conduit:', error);
+          errorCount++;
+          checkComplete();
+        }
+      );
+    });
+  }
+
+  private performPdfExport() {
+    if (!this.projectId) return;
+    console.log('Exporting PDF...');
+    // Use custom filename from modal
+    const filename = this.pdfExportFilename.trim();
+    const finalFilename = filename.endsWith('.pdf') ? filename : `${filename}.pdf`;
+    
+    this.apiService.exportPdf(this.projectId, undefined, this.viewport?.pageWidth, this.viewport?.pageHeight).subscribe(
       (blob: Blob) => {
-        this.downloadFile(blob, `project_${this.projectId}_annotated.pdf`);
+        this.downloadFile(blob, finalFilename);
+      },
+      (error: any) => {
+        console.error('Failed to export PDF:', error);
+        alert('Failed to export PDF. Please try again.');
       }
     );
   }

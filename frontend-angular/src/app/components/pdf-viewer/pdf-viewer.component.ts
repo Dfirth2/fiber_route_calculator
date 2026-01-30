@@ -53,7 +53,7 @@ export class PDFViewerComponent implements OnInit, OnChanges {
   handholes: { id: number; x: number; y: number }[] = [];
   selectedEndpoint: { point: { x: number; y: number }; type: 'terminal' | 'drop' } | null = null;
   assignments: Assignment[] = [];
-  selectedMarkerForAssign: { id: number; x: number; y: number; type: 'terminal' | 'drop' } | null = null;
+  selectedMarkerForAssign: { id: number; x: number; y: number; type: 'terminal' | 'drop' | 'handhole' } | null = null;
   toastMessage: string | null = null;
   toastType: 'success' | 'error' | 'info' = 'info';
   showEquipmentMenu = false;
@@ -63,6 +63,8 @@ export class PDFViewerComponent implements OnInit, OnChanges {
   calibrationError: string = '';
   private assignmentsSubscribed = false;
   private toastTimer: any = null;
+  private polylinesInitialized = false;
+  private conduitsInitialized = false;
 
   private renderTask: any = null;
   private lastMouse = { x: 0, y: 0 };
@@ -125,18 +127,56 @@ export class PDFViewerComponent implements OnInit, OnChanges {
       this.redrawOverlay();
     }
     if (changes['syncedPolylines'] && this.syncedPolylines) {
-      this.polylines = this.syncedPolylines;
-      if (!this.projectId) {
-        this.saveDrawingData();
+      // Sync from parent in these cases:
+      // 1. Local mode (no projectId) - always sync
+      // 2. Backend mode and we haven't loaded data yet (empty local array)
+      // 3. Backend mode and incoming data is non-empty (real data from backend)
+      const shouldSync = !this.projectId || 
+                         this.polylines.length === 0 || 
+                         (this.syncedPolylines.length > 0 && !this.polylinesInitialized);
+      
+      if (shouldSync) {
+        if (!this.projectId) {
+          // Local mode: only sync current page polylines
+          const polylinesFromOtherPages = this.polylines.filter(p => !p.pageNumber || p.pageNumber !== this.currentPage);
+          const currentPagePolylines = this.syncedPolylines;
+          this.polylines = [...polylinesFromOtherPages, ...currentPagePolylines];
+          this.saveDrawingData();
+        } else {
+          // Backend mode: parent sends ALL polylines, replace entire array
+          this.polylines = [...this.syncedPolylines];
+          if (this.syncedPolylines.length > 0) {
+            this.polylinesInitialized = true; // Mark as initialized after receiving real data
+          }
+        }
+        this.redrawOverlay();
       }
-      this.redrawOverlay();
     }
     if (changes['syncedConduits'] && this.syncedConduits) {
-      this.conduitMetadata = this.syncedConduits.map(c => ({...c})); // Clone to avoid reference issues
-      if (!this.projectId) {
-        this.saveDrawingData();
+      // Sync from parent in these cases:
+      // 1. Local mode (no projectId) - always sync
+      // 2. Backend mode and we haven't loaded data yet (empty local array)
+      // 3. Backend mode and incoming data is non-empty (real data from backend)
+      const shouldSync = !this.projectId || 
+                         this.conduitMetadata.length === 0 || 
+                         (this.syncedConduits.length > 0 && !this.conduitsInitialized);
+      
+      if (shouldSync) {
+        if (!this.projectId) {
+          // Local mode: only sync current page conduits
+          const conduitsFromOtherPages = this.conduitMetadata.filter(c => !c.pageNumber || c.pageNumber !== this.currentPage);
+          const currentPageConduits = this.syncedConduits.map(c => ({...c}));
+          this.conduitMetadata = [...conduitsFromOtherPages, ...currentPageConduits];
+          this.saveDrawingData();
+        } else {
+          // Backend mode: parent sends ALL conduits, replace entire array
+          this.conduitMetadata = this.syncedConduits.map(c => ({...c}));
+          if (this.syncedConduits.length > 0) {
+            this.conduitsInitialized = true; // Mark as initialized after receiving real data
+          }
+        }
+        this.redrawOverlay();
       }
-      this.redrawOverlay();
     }
   }
 
@@ -342,7 +382,7 @@ export class PDFViewerComponent implements OnInit, OnChanges {
 
       const path = [this.selectedEndpoint.point, end.point];
       const lengthFt = this.measurePath(path);
-      this.polylines.push({ points: path, lengthFt, type: 'conduit' });
+      this.polylines.push({ points: path, lengthFt, type: 'conduit', pageNumber: this.currentPage });
       
       // Store metadata about what this conduit connects
       const fromMarker = this.findMarkerByPoint(this.selectedEndpoint.point, this.selectedEndpoint.type);
@@ -672,7 +712,7 @@ export class PDFViewerComponent implements OnInit, OnChanges {
       return;
     }
     const lengthFt = this.measurePath(this.drawingPath);
-    const polyline = { points: [...this.drawingPath], lengthFt, type: 'fiber' as const };
+    const polyline = { points: [...this.drawingPath], lengthFt, type: 'fiber' as const, pageNumber: this.currentPage };
     this.polylines.push(polyline);
     this.totalLengthFeet = this.polylines.filter(p => p.type === 'fiber').reduce((sum, p) => sum + p.lengthFt, 0);
     this.polylinesChanged.emit(this.polylines);
@@ -698,18 +738,23 @@ export class PDFViewerComponent implements OnInit, OnChanges {
       ctx.fill();
     });
 
-    // polylines
-    this.polylines.forEach(line => {
-      if (line.points.length < 2) return;
-      ctx.strokeStyle = line.type !== 'conduit' ? '#22c55e' : '#9333ea';
-      ctx.lineWidth = 2;
-      ctx.beginPath();
-      ctx.moveTo(line.points[0].x * this.zoom, line.points[0].y * this.zoom);
-      for (let i = 1; i < line.points.length; i++) {
-        ctx.lineTo(line.points[i].x * this.zoom, line.points[i].y * this.zoom);
-      }
-      ctx.stroke();
-    });
+    // Draw handholes first so everything else appears on top
+    this.handholes.forEach((pt, idx) => this.drawHandhole(pt, idx));
+
+    // polylines (filter by current page)
+    this.polylines
+      .filter(line => !line.pageNumber || line.pageNumber === this.currentPage)
+      .forEach(line => {
+        if (line.points.length < 2) return;
+        ctx.strokeStyle = line.type !== 'conduit' ? '#22c55e' : '#9333ea';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(line.points[0].x * this.zoom, line.points[0].y * this.zoom);
+        for (let i = 1; i < line.points.length; i++) {
+          ctx.lineTo(line.points[i].x * this.zoom, line.points[i].y * this.zoom);
+        }
+        ctx.stroke();
+      });
 
     // current drawing
     if (this.drawingPath.length > 0) {
@@ -739,11 +784,6 @@ export class PDFViewerComponent implements OnInit, OnChanges {
       ctx.stroke();
     }
 
-    // markers
-    this.terminals.forEach((pt, idx) => this.drawTerminal(pt, idx));
-    this.drops.forEach((pt, idx) => this.drawDrop(pt, '#a855f7', idx));
-    this.handholes.forEach((pt, idx) => this.drawHandhole(pt, idx));
-
     // assignments (arrows from markers to lots)
     this.assignments.forEach(assignment => {
       this.drawAssignmentArrow(assignment);
@@ -757,6 +797,10 @@ export class PDFViewerComponent implements OnInit, OnChanges {
       ctx.arc(this.selectedMarkerForAssign.x * this.zoom, this.selectedMarkerForAssign.y * this.zoom, 18, 0, Math.PI * 2);
       ctx.stroke();
     }
+
+    // Draw terminals and drops last so they're always on top
+    this.terminals.forEach((pt, idx) => this.drawTerminal(pt, idx));
+    this.drops.forEach((pt, idx) => this.drawDrop(pt, '#a855f7', idx));
   }
 
   private findMarkerByPoint(point: { x: number; y: number }, type: 'terminal' | 'drop'): { id: number; x: number; y: number } | null {
@@ -878,17 +922,21 @@ export class PDFViewerComponent implements OnInit, OnChanges {
     });
   }
 
-  private deleteMarker(marker: { id: number; x: number; y: number; type: 'terminal' | 'drop' }) {
+  private deleteMarker(marker: { id: number; x: number; y: number; type: 'terminal' | 'drop' | 'handhole' }) {
     if (!this.projectId) {
       if (marker.type === 'terminal') {
         this.terminals = this.terminals.filter(t => t.id !== marker.id);
         this.terminalsChanged.emit(this.terminals);
-      } else {
+      } else if (marker.type === 'drop') {
         this.drops = this.drops.filter(d => d.id !== marker.id);
         this.dropsChanged.emit(this.drops);
+      } else {
+        this.handholes = this.handholes.filter(h => h.id !== marker.id);
+        this.handholesChanged.emit(this.handholes);
       }
       this.saveDrawingData();
-      this.showToast(`${marker.type === 'terminal' ? 'Terminal' : 'Drop Ped'} deleted`, 2200, 'success');
+      const markerType = marker.type === 'terminal' ? 'Terminal' : marker.type === 'drop' ? 'Drop Ped' : 'Handhole';
+      this.showToast(`${markerType} deleted`, 2200, 'success');
       this.redrawOverlay();
       return;
     }
@@ -898,11 +946,15 @@ export class PDFViewerComponent implements OnInit, OnChanges {
         if (marker.type === 'terminal') {
           this.terminals = this.terminals.filter(t => t.id !== marker.id);
           this.terminalsChanged.emit(this.terminals);
-        } else {
+        } else if (marker.type === 'drop') {
           this.drops = this.drops.filter(d => d.id !== marker.id);
           this.dropsChanged.emit(this.drops);
+        } else {
+          this.handholes = this.handholes.filter(h => h.id !== marker.id);
+          this.handholesChanged.emit(this.handholes);
         }
-        this.showToast(`${marker.type === 'terminal' ? 'Terminal' : 'Drop Ped'} deleted`, 2200, 'success');
+        const markerType = marker.type === 'terminal' ? 'Terminal' : marker.type === 'drop' ? 'Drop Ped' : 'Handhole';
+        this.showToast(`${markerType} deleted`, 2200, 'success');
         this.redrawOverlay();
       },
       error: (error) => {
@@ -1162,6 +1214,7 @@ export class PDFViewerComponent implements OnInit, OnChanges {
         next: (markers) => {
           this.terminals = [];
           this.drops = [];
+          this.handholes = [];
           // Filter markers to only show those on the current page
           markers.forEach(marker => {
             // Only load markers for the current page
@@ -1173,6 +1226,8 @@ export class PDFViewerComponent implements OnInit, OnChanges {
               this.terminals.push(markerObj);
             } else if (marker.marker_type === 'dropPed') {
               this.drops.push(markerObj);
+            } else if (marker.marker_type === 'handhole') {
+              this.handholes.push(markerObj);
             }
           });
           this.redrawOverlay();
@@ -1191,19 +1246,25 @@ export class PDFViewerComponent implements OnInit, OnChanges {
         x: marker.x,
         y: marker.y
       };
+      console.log('Saving marker to backend:', payload);
       this.apiService.addMarker(this.projectId, payload).subscribe({
         next: (savedMarker) => {
+          console.log('Marker saved successfully:', savedMarker);
           const markerObj = { id: savedMarker.id, x: savedMarker.x, y: savedMarker.y };
           if (type === 'terminal') {
             this.terminals.push(markerObj);
+            console.log('Added to terminals array, total:', this.terminals.length);
             this.terminalsChanged.emit(this.terminals);
           } else if (type === 'handhole') {
             this.handholes.push(markerObj);
+            console.log('Added to handholes array, total:', this.handholes.length);
             this.handholesChanged.emit(this.handholes);
           } else {
             this.drops.push(markerObj);
+            console.log('Added to drops array, total:', this.drops.length);
             this.dropsChanged.emit(this.drops);
           }
+          console.log('Calling redrawOverlay');
           this.saveDrawingData();
           this.redrawOverlay();
         },
@@ -1285,15 +1346,19 @@ export class PDFViewerComponent implements OnInit, OnChanges {
     });
   }
 
-  private findMarkerAtPoint(point: { x: number; y: number }): { id: number; x: number; y: number; type: 'terminal' | 'drop' } | null {
+  private findMarkerAtPoint(point: { x: number; y: number }): { id: number; x: number; y: number; type: 'terminal' | 'drop' | 'handhole' } | null {
     const hitRadius = 20 / this.zoom; // 20px click radius
+    
+    console.log('[findMarkerAtPoint] Click at:', point, 'Zoom:', this.zoom, 'HitRadius:', hitRadius);
     
     // Check terminals
     for (let i = 0; i < this.terminals.length; i++) {
       const dx = this.terminals[i].x - point.x;
       const dy = this.terminals[i].y - point.y;
       const dist = Math.sqrt(dx * dx + dy * dy);
+      console.log('[findMarkerAtPoint] Terminal', i, ':', this.terminals[i], 'Distance:', dist);
       if (dist <= hitRadius) {
+        console.log('[findMarkerAtPoint] FOUND TERMINAL');
         return { id: this.terminals[i].id, x: this.terminals[i].x, y: this.terminals[i].y, type: 'terminal' };
       }
     }
@@ -1303,11 +1368,26 @@ export class PDFViewerComponent implements OnInit, OnChanges {
       const dx = this.drops[i].x - point.x;
       const dy = this.drops[i].y - point.y;
       const dist = Math.sqrt(dx * dx + dy * dy);
+      console.log('[findMarkerAtPoint] Drop', i, ':', this.drops[i], 'Distance:', dist);
       if (dist <= hitRadius) {
+        console.log('[findMarkerAtPoint] FOUND DROP');
         return { id: this.drops[i].id, x: this.drops[i].x, y: this.drops[i].y, type: 'drop' };
       }
     }
     
+    // Check handholes
+    for (let i = 0; i < this.handholes.length; i++) {
+      const dx = this.handholes[i].x - point.x;
+      const dy = this.handholes[i].y - point.y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      console.log('[findMarkerAtPoint] Handhole', i, ':', this.handholes[i], 'Distance:', dist);
+      if (dist <= hitRadius) {
+        console.log('[findMarkerAtPoint] FOUND HANDHOLE');
+        return { id: this.handholes[i].id, x: this.handholes[i].x, y: this.handholes[i].y, type: 'handhole' };
+      }
+    }
+    
+    console.log('[findMarkerAtPoint] NOT FOUND: terminals=', this.terminals.length, 'drops=', this.drops.length, 'handholes=', this.handholes.length);
     return null;
   }
 
