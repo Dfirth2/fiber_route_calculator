@@ -50,6 +50,7 @@ import { DrawingCanvasComponent } from '../drawing-canvas/drawing-canvas.compone
           (handholesChanged)="onHandholesChanged($event)"
           (conduitsChanged)="onConduitsChanged($event)"
           (currentPageChanged)="onCurrentPageChanged($event)"
+          (viewportChanged)="onViewportChanged($event)"
         ></app-pdf-viewer>
         <div *ngIf="pdfCanvas && viewport" class="absolute inset-0">
           <app-drawing-canvas 
@@ -150,8 +151,9 @@ import { DrawingCanvasComponent } from '../drawing-canvas/drawing-canvas.compone
           </button>
           <div *ngIf="expandedSections['fiber']" class="space-y-1">
             <ul class="space-y-1 text-sm text-gray-700" *ngIf="fiberSegments.length; else noFiber">
-              <li *ngFor="let seg of fiberSegments" class="bg-gray-50 p-2 rounded">
-                <span>{{ seg.name || 'Route' }} – page {{ seg.page_number }} – {{ seg.length_ft ? seg.length_ft.toFixed(1) : '0.0' }} ft</span>
+              <li *ngFor="let seg of fiberSegments; let i = index" class="bg-gray-50 p-2 rounded flex items-center gap-2">
+                <span class="flex-shrink-0 bg-green-600 text-white font-bold rounded-full w-6 h-6 flex items-center justify-center text-xs">{{ i + 1 }}</span>
+                <span class="flex-1">{{ seg.name || 'Route' }} – page {{ seg.page_number }} – {{ seg.length_ft ? seg.length_ft.toFixed(1) : '0.0' }} ft</span>
               </li>
             </ul>
             <ng-template #noFiber><div class="text-xs text-gray-500">No fiber drawn</div></ng-template>
@@ -499,6 +501,11 @@ export class ProjectEditorComponent implements OnInit {
   onCanvasReady(event: any) {
     this.pdfCanvas = event.canvas;
     this.viewport = event.viewport;
+  }
+
+  onViewportChanged(viewport: any) {
+    this.viewport = viewport;
+    console.log('Viewport updated:', viewport);
   }
 
   onCurrentPageChanged(page: number) {
@@ -1201,7 +1208,13 @@ export class ProjectEditorComponent implements OnInit {
     const filename = this.pdfExportFilename.trim();
     const finalFilename = filename.endsWith('.pdf') ? filename : `${filename}.pdf`;
     
-    this.apiService.exportPdf(this.projectId, undefined, this.viewport?.pageWidth, this.viewport?.pageHeight).subscribe(
+    // Send the actual viewport dimensions (which include rotation)
+    const pageWidth = this.viewport?.width;
+    const pageHeight = this.viewport?.height;
+    console.log('Viewport object:', this.viewport);
+    console.log(`Exporting with viewport dimensions: ${pageWidth} x ${pageHeight}`);
+    
+    this.apiService.exportPdf(this.projectId, undefined, pageWidth, pageHeight).subscribe(
       (blob: Blob) => {
         this.downloadFile(blob, finalFilename);
       },

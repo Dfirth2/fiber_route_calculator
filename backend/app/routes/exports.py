@@ -152,6 +152,7 @@ def export_pdf_with_overlays(
                 "page_number": p.page_number,
                 "points": p.points,
                 "length_ft": p.length_ft,
+                "type": "fiber",  # All polylines in DB are fiber routes (conduits are separate)
             }
             for p in polylines
         ],
@@ -183,6 +184,10 @@ def export_pdf_with_overlays(
             for c in conduits
         ],
     }
+    
+    print(f"PDF Export: {len(polylines)} polylines, {len(markers)} markers, {len(conduits)} conduits")
+    for idx, p in enumerate(polylines):
+        print(f"  Polyline {idx}: page={p.page_number}, type=fiber, points={len(p.points)}")
     
     # Create PDF with overlays on all pages
     try:

@@ -292,3 +292,49 @@ A web application for measuring fiber routes from subdivision plats. Upload a PD
   - Modal state management with `showPdfExportModal` flag
   - `confirmPdfExport()` method handles validation and export flow
   - Proper TypeScript typing for all new modal functionality
+
+## Update 10 - Fiber Route Labeling & PDF Export Overlay Alignment
+- **Fiber Route Identification System**:
+  - Fiber routes now display numbered identifiers (1, 2, 3...) in green circles
+  - Labels positioned at 25% and 75% of route length for longer routes
+  - Adaptive positioning: single label at midpoint if route < 300px
+  - Labels only appear on actual fiber routes (>= 150px) to exclude drop conduits
+  - Green circle styling (#22c55e) with white center text for clear visibility
+- **Sidebar Route Identification**:
+  - Fiber Cable list in sidebar now displays matching numbered identifiers
+  - Each route shows as "1: Fiber Cable (XX.X ft)" with corresponding route number
+  - Consistent numbering between viewer and sidebar for quick reference
+- **PDF Export Overlay Alignment**:
+  - Fixed critical coordinate transformation for rotated PDFs
+  - Properly handles 270° rotated PDFs with vertical mirroring
+  - Coordinate formula: `new_x = height - y`, `new_y = canvas_height - x`
+  - Frontend now emits viewport dimensions from PDF viewer to project editor
+  - Backend receives correct page dimensions for accurate overlay positioning
+  - All markers, routes, and labels now export at exact positions matching viewer
+- **Viewport Dimension Communication**:
+  - Added `@Output() viewportChanged` EventEmitter to pdf-viewer component
+  - pdf-viewer emits viewport object on each page render
+  - project-editor listens with `(viewportChanged)="onViewportChanged($event)"`
+  - Export endpoint receives `page_width` and `page_height` query parameters
+  - Backend uses received dimensions for accurate coordinate transformations
+- **Text Rendering & Orientation**:
+  - Removed manual text rotation to let PDF viewer handle orientation naturally
+  - Labels render without rotation, allowing PDF viewer to apply proper orientation
+  - Text displays correctly on rotated PDFs without manual angle calculations
+  - Consistent text orientation matching PDF page layout
+- **Drop Conduit Label Filtering**:
+  - Length threshold (150px minimum) applied to route labeling
+  - Drop conduits < 150px do not receive labels or identifiers
+  - Only meaningful fiber routes get numbered identifiers
+  - Reduces visual clutter on exported PDFs by eliminating conduit labels
+- **Rendering Architecture**:
+  - Render order on export: Handholes → Polylines → Conduits → Arrows → Terminals/Drops
+  - Label positioning calculated for each polyline individually
+  - Terminal and drop labels rendered last for maximum visibility
+  - Color coding maintained: green for fiber routes, colored shapes for terminals/drops
+- **Code Quality**:
+  - Coordinate transformation fully debugged and tested
+  - Frontend-backend dimension passing properly implemented
+  - Label positioning logic handles variable route lengths
+  - TypeScript event emitter pattern for robust dimension passing
+  - Backend ReportLab canvas operations tested with real PDF exports

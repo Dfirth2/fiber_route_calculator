@@ -8,6 +8,17 @@ from reportlab.pdfgen import canvas
 from pypdf import PdfReader, PdfWriter
 
 
+def _get_label(index: int) -> str:
+    """Generate alphabetic label (A, B, C, ..., Z, AA, AB, ...)"""
+    if index < 26:
+        return chr(65 + index)  # A-Z
+    else:
+        # AA, AB, AC, etc.
+        first = chr(65 + (index // 26) - 1)
+        second = chr(65 + (index % 26))
+        return first + second
+
+
 def overlay_drawings_on_pdf(
     original_pdf_path: str,
     all_data: Dict = None,
@@ -143,18 +154,18 @@ def _create_overlay_content(
     Create a PDF overlay with routes, markers, and conduits.
     
     Args:
-        width: Rendered page width (after rotation)
-        height: Rendered page height (after rotation)
+        width: Rendered page width (after rotation) - coordinates are in this space
+        height: Rendered page height (after rotation) - coordinates are in this space
         rotation: PDF rotation in degrees (0, 90, 180, 270)
         original_width: Original PDF page width (before rotation)
         original_height: Original PDF page height (before rotation)
     """
     pdf_buffer = io.BytesIO()
     
-    # The canvas must be created with the ORIGINAL (unrotated) dimensions
-    # because ReportLab will apply rotation when we merge
+    # For rotated PDFs, we need to create overlay in the ORIGINAL (unrotated) space
+    # because pypdf will apply rotation when merging
     if original_width and original_height and rotation in [90, 270]:
-        # For 90/270 rotation, dimensions are swapped
+        # Use original unrotated dimensions
         canvas_width = original_width
         canvas_height = original_height
     else:
@@ -162,6 +173,7 @@ def _create_overlay_content(
         canvas_height = height
     
     print(f"PDF Overlay: Creating overlay canvas {canvas_width} x {canvas_height} (rotation: {rotation})")
+    print(f"PDF Overlay: Frontend sent dimensions {width} x {height}")
     if markers:
         print(f"PDF Overlay: First marker at ({markers[0].get('x')}, {markers[0].get('y')}) in rotated space")
     
@@ -169,34 +181,37 @@ def _create_overlay_content(
         c = canvas.Canvas(pdf_buffer, pagesize=(canvas_width, canvas_height))
         c.setFillAlpha(1.0)
         
-        # Helper function to transform coordinates based on rotation
+        # Helper function to transform coordinates
         def transform_point(x, y):
-            """Transform coordinates from rotated view to original PDF space."""
+            """
+            Transform coordinates from frontend rotated view space to original PDF space.
+            Frontend coordinates are in the rotated viewport (what user sees after browser rotation).
+            We need to reverse the rotation to get back to original PDF coordinates.
+            """
             if rotation == 0:
-                # No rotation
+                # No rotation: simple Y flip for bottom-left origin
                 return x, canvas_height - y
-            elif rotation == 90:
-                # 90° clockwise: rotated (x,y) in WxH -> original at (y, W-x) in HxW
-                return y, canvas_width - x
-            elif rotation == 180:
-                # 180°: rotated (x,y) in WxH -> original at (W-x, y) in WxH
-                return canvas_width - x, y
             elif rotation == 270:
-                # 270° clockwise (or 90° counter-clockwise)
-                # Frontend rotated space: width x height (2592 x 1728), top-left origin
-                # Original PDF space: height x width (1728 x 2592), bottom-left origin
-                # 
-                # Step 1: Rotate coordinates 270° clockwise (same as 90° counter-clockwise)
-                #   In rotated frame (w,h), point at (x,y) from top-left
-                #   Maps to original frame (h,w) at position (h-y, x) from top-left
-                # Step 2: Convert to PDF bottom-left origin
-                #   Y = original_height - Y_from_top = w - x
-                new_x = height - y
-                new_y = canvas_height - x  # canvas_height is original_height (2592)
-                print(f"  270° transform: ({x}, {y}) -> ({new_x}, {new_y})")
+                # Frontend rotated view: W=2592, H=1728
+                # Original PDF: W=1728, H=2592
+                if width == canvas_width and height == canvas_height:
+                    return x, canvas_height - y
+                else:
+                    # Reverse 270° rotation and flip vertically
+                    new_x = height - y  # height = 1728
+                    new_y = canvas_height - x  # canvas_height = 2592
+                    return new_x, new_y
+            elif rotation == 90:
+                # Frontend view is rotated 90° CW from original
+                # To reverse: apply 270° CW
+                new_x = y  
+                new_y = width - x
                 return new_x, new_y
+            elif rotation == 180:
+                # Reverse 180° rotation
+                return canvas_width - x, canvas_height - y
             else:
-                # Unsupported rotation, default to no rotation
+                # Default: no rotation
                 return x, canvas_height - y
         
         # DRAWING ORDER: Back to front
@@ -220,9 +235,11 @@ def _create_overlay_content(
         
         # 2. Draw polylines (fiber routes and conduit polylines)
         if polylines:
-            for polyline in polylines:
+            print(f"PDF Overlay: Drawing {len(polylines)} polylines")
+            for idx, polyline in enumerate(polylines):
                 points = polyline.get("points", [])
                 polyline_type = polyline.get("type", "fiber")
+                print(f"  Polyline {idx}: type={polyline_type}, points={len(points)}")
                 
                 # Set color and width based on type
                 if polyline_type == "conduit":
@@ -241,6 +258,61 @@ def _create_overlay_content(
                         x2, y2 = transform_point(p2.get("x", 0), p2.get("y", 0))
                         
                         c.line(x1, y1, x2, y2)
+                
+                # Add labels for fiber routes (not conduits) at 25% and 75% points
+                # Skip labeling for very short polylines (likely conduits) or explicit conduit type
+                if polyline_type != "conduit" and len(points) >= 2:
+                    # Calculate total route length
+                    segment_lengths = []
+                    total_length = 0
+                    for i in range(len(points) - 1):
+                        dx = points[i + 1].get("x", 0) - points[i].get("x", 0)
+                        dy = points[i + 1].get("y", 0) - points[i].get("y", 0)
+                        seg_length = (dx * dx + dy * dy) ** 0.5
+                        segment_lengths.append(seg_length)
+                        total_length += seg_length
+                    
+                    # Only label routes longer than 150 pixels (skip short conduit-like polylines)
+                    if total_length >= 150:
+                        # Count which fiber route this is (skip conduits in numbering)
+                        fiber_count = sum(1 for p in polylines[:idx+1] if p.get("type", "fiber") != "conduit")
+                        
+                        # For short routes (< 300 pixels), use single label at midpoint
+                        # For longer routes, use labels at 25% and 75%
+                        positions = [0.5] if total_length < 300 else [0.25, 0.75]
+                        
+                        for position in positions:
+                            target_dist = total_length * position
+                            
+                            # Find which segment contains this distance
+                            accumulated_dist = 0
+                            segment_idx = 0
+                            local_t = 0
+                            
+                            for i in range(len(segment_lengths)):
+                                if accumulated_dist + segment_lengths[i] >= target_dist:
+                                    segment_idx = i
+                                    local_t = (target_dist - accumulated_dist) / segment_lengths[i] if segment_lengths[i] > 0 else 0
+                                    break
+                                accumulated_dist += segment_lengths[i]
+                            
+                            # Interpolate position along the segment
+                            point = points[segment_idx]
+                            next_point = points[segment_idx + 1]
+                            x = point.get("x", 0) + (next_point.get("x", 0) - point.get("x", 0)) * local_t
+                            y = point.get("y", 0) + (next_point.get("y", 0) - point.get("y", 0)) * local_t
+                            label_x, label_y = transform_point(x, y)
+                            
+                            # Draw label background circle
+                            c.setFillColor("#22c55e", 1)  # Green
+                            c.setStrokeColor("#ffffff", 1)
+                            c.setLineWidth(2)
+                            c.circle(label_x, label_y, 12, fill=1, stroke=1)
+                            
+                            # Draw label number
+                            c.setFillColor("#ffffff", 1)
+                            c.setFont("Helvetica-Bold", 11)
+                            c.drawCentredString(label_x, label_y - 2, str(fiber_count))
         
         # 3. Draw conduits (drop conduit connections)
         if conduits and markers:
@@ -345,4 +417,3 @@ def _create_overlay_content(
         c = canvas.Canvas(pdf_buffer, pagesize=(612, 792))
         c.save()
         pdf_buffer.seek(0)
-        return pdf_buffer.getvalue()
