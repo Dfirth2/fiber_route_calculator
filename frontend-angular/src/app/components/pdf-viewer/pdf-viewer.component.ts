@@ -744,7 +744,7 @@ export class PDFViewerComponent implements OnInit, OnChanges {
     // polylines (filter by current page)
     this.polylines
       .filter(line => !line.pageNumber || line.pageNumber === this.currentPage)
-      .forEach(line => {
+      .forEach((line, idx) => {
         if (line.points.length < 2) return;
         ctx.strokeStyle = line.type !== 'conduit' ? '#22c55e' : '#9333ea';
         ctx.lineWidth = 2;
@@ -754,6 +754,70 @@ export class PDFViewerComponent implements OnInit, OnChanges {
           ctx.lineTo(line.points[i].x * this.zoom, line.points[i].y * this.zoom);
         }
         ctx.stroke();
+        
+        // Add labels for fiber routes (not conduits) at 25% and 75% points
+        if (line.type !== 'conduit' && line.points.length >= 2) {
+          // Count which fiber route this is (skip conduits in numbering)
+          const fiberRouteIndex = this.polylines
+            .filter(p => !p.pageNumber || p.pageNumber === this.currentPage)
+            .slice(0, idx + 1)
+            .filter(p => p.type !== 'conduit').length - 1;
+          
+          // Calculate total route length and segment lengths
+          const segmentLengths: number[] = [];
+          let totalLength = 0;
+          for (let i = 0; i < line.points.length - 1; i++) {
+            const dx = line.points[i + 1].x - line.points[i].x;
+            const dy = line.points[i + 1].y - line.points[i].y;
+            const segLength = Math.sqrt(dx * dx + dy * dy);
+            segmentLengths.push(segLength);
+            totalLength += segLength;
+          }
+          
+          // For short routes (< 100 pixels), use single label at midpoint
+          // For longer routes, use labels at 25% and 75%
+          const positions = totalLength < 100 ? [0.5] : [0.25, 0.75];
+          
+          positions.forEach(position => {
+            const targetDist = totalLength * position;
+            
+            // Find which segment contains this distance
+            let accumulatedDist = 0;
+            let segmentIdx = 0;
+            let localT = 0;
+            
+            for (let i = 0; i < segmentLengths.length; i++) {
+              if (accumulatedDist + segmentLengths[i] >= targetDist) {
+                segmentIdx = i;
+                localT = (targetDist - accumulatedDist) / segmentLengths[i];
+                break;
+              }
+              accumulatedDist += segmentLengths[i];
+            }
+            
+            // Interpolate position along the segment
+            const point = line.points[segmentIdx];
+            const nextPoint = line.points[segmentIdx + 1];
+            const labelX = (point.x + (nextPoint.x - point.x) * localT) * this.zoom;
+            const labelY = (point.y + (nextPoint.y - point.y) * localT) * this.zoom;
+            
+            // Draw label background circle
+            ctx.fillStyle = '#22c55e';
+            ctx.strokeStyle = '#ffffff';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.arc(labelX, labelY, 12, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.stroke();
+            
+            // Draw label number
+            ctx.fillStyle = '#ffffff';
+            ctx.font = 'bold 11px Arial';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText((fiberRouteIndex + 1).toString(), labelX, labelY);
+          });
+        }
       });
 
     // current drawing
