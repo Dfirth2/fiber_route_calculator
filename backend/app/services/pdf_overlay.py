@@ -8,6 +8,17 @@ from reportlab.pdfgen import canvas
 from pypdf import PdfReader, PdfWriter
 
 
+def _get_label(index: int) -> str:
+    """Generate alphabetic label (A, B, C, ..., Z, AA, AB, ...)"""
+    if index < 26:
+        return chr(65 + index)  # A-Z
+    else:
+        # AA, AB, AC, etc.
+        first = chr(65 + (index // 26) - 1)
+        second = chr(65 + (index % 26))
+        return first + second
+
+
 def overlay_drawings_on_pdf(
     original_pdf_path: str,
     all_data: Dict = None,
@@ -220,7 +231,7 @@ def _create_overlay_content(
         
         # 2. Draw polylines (fiber routes and conduit polylines)
         if polylines:
-            for polyline in polylines:
+            for idx, polyline in enumerate(polylines):
                 points = polyline.get("points", [])
                 polyline_type = polyline.get("type", "fiber")
                 
@@ -241,6 +252,58 @@ def _create_overlay_content(
                         x2, y2 = transform_point(p2.get("x", 0), p2.get("y", 0))
                         
                         c.line(x1, y1, x2, y2)
+                
+                # Add labels for fiber routes (not conduits) at 25% and 75% points
+                if polyline_type != "conduit" and len(points) >= 2:
+                    # Count which fiber route this is (skip conduits in numbering)
+                    fiber_count = sum(1 for p in polylines[:idx+1] if p.get("type", "fiber") != "conduit")
+                    
+                    # Calculate total route length and segment lengths
+                    segment_lengths = []
+                    total_length = 0
+                    for i in range(len(points) - 1):
+                        dx = points[i + 1].get("x", 0) - points[i].get("x", 0)
+                        dy = points[i + 1].get("y", 0) - points[i].get("y", 0)
+                        seg_length = (dx * dx + dy * dy) ** 0.5
+                        segment_lengths.append(seg_length)
+                        total_length += seg_length
+                    
+                    # For short routes (< 100 pixels), use single label at midpoint
+                    # For longer routes, use labels at 25% and 75%
+                    positions = [0.5] if total_length < 100 else [0.25, 0.75]
+                    
+                    for position in positions:
+                        target_dist = total_length * position
+                        
+                        # Find which segment contains this distance
+                        accumulated_dist = 0
+                        segment_idx = 0
+                        local_t = 0
+                        
+                        for i in range(len(segment_lengths)):
+                            if accumulated_dist + segment_lengths[i] >= target_dist:
+                                segment_idx = i
+                                local_t = (target_dist - accumulated_dist) / segment_lengths[i] if segment_lengths[i] > 0 else 0
+                                break
+                            accumulated_dist += segment_lengths[i]
+                        
+                        # Interpolate position along the segment
+                        point = points[segment_idx]
+                        next_point = points[segment_idx + 1]
+                        x = point.get("x", 0) + (next_point.get("x", 0) - point.get("x", 0)) * local_t
+                        y = point.get("y", 0) + (next_point.get("y", 0) - point.get("y", 0)) * local_t
+                        label_x, label_y = transform_point(x, y)
+                        
+                        # Draw label background circle
+                        c.setFillColor("#22c55e", 1)  # Green
+                        c.setStrokeColor("#ffffff", 1)
+                        c.setLineWidth(2)
+                        c.circle(label_x, label_y, 12, fill=1, stroke=1)
+                        
+                        # Draw label number
+                        c.setFillColor("#ffffff", 1)
+                        c.setFont("Helvetica-Bold", 11)
+                        c.drawCentredString(label_x, label_y - 2, str(fiber_count))
         
         # 3. Draw conduits (drop conduit connections)
         if conduits and markers:
@@ -256,7 +319,6 @@ def _create_overlay_content(
                     c.setStrokeColor("#9333ea", 1)  # Purple
                     c.setLineWidth(3)
                     c.line(from_x, from_y, to_x, to_y)
-        
         # 4. Draw marker assignment arrows
         if marker_links and markers:
             for link in marker_links:
@@ -345,4 +407,3 @@ def _create_overlay_content(
         c = canvas.Canvas(pdf_buffer, pagesize=(612, 792))
         c.save()
         pdf_buffer.seek(0)
-        return pdf_buffer.getvalue()
