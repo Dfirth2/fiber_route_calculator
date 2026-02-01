@@ -76,6 +76,7 @@ export class PDFViewerComponent implements OnInit, OnChanges {
   @Output() handholesChanged = new EventEmitter<any[]>();
   @Output() conduitsChanged = new EventEmitter<any[]>();
   @Output() currentPageChanged = new EventEmitter<number>();
+  @Output() viewportChanged = new EventEmitter<any>();
 
   constructor(private apiService: ApiService, private stateService: StateService) {}
 
@@ -229,6 +230,9 @@ export class PDFViewerComponent implements OnInit, OnChanges {
 
       canvas.width = viewport.width;
       canvas.height = viewport.height;
+
+      // Emit viewport for export
+      this.viewportChanged.emit(viewport);
 
       // keep overlay in sync
       if (this.overlayRef) {

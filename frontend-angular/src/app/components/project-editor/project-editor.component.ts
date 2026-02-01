@@ -50,6 +50,7 @@ import { DrawingCanvasComponent } from '../drawing-canvas/drawing-canvas.compone
           (handholesChanged)="onHandholesChanged($event)"
           (conduitsChanged)="onConduitsChanged($event)"
           (currentPageChanged)="onCurrentPageChanged($event)"
+          (viewportChanged)="onViewportChanged($event)"
         ></app-pdf-viewer>
         <div *ngIf="pdfCanvas && viewport" class="absolute inset-0">
           <app-drawing-canvas 
@@ -500,6 +501,11 @@ export class ProjectEditorComponent implements OnInit {
   onCanvasReady(event: any) {
     this.pdfCanvas = event.canvas;
     this.viewport = event.viewport;
+  }
+
+  onViewportChanged(viewport: any) {
+    this.viewport = viewport;
+    console.log('Viewport updated:', viewport);
   }
 
   onCurrentPageChanged(page: number) {
@@ -1202,7 +1208,13 @@ export class ProjectEditorComponent implements OnInit {
     const filename = this.pdfExportFilename.trim();
     const finalFilename = filename.endsWith('.pdf') ? filename : `${filename}.pdf`;
     
-    this.apiService.exportPdf(this.projectId, undefined, this.viewport?.pageWidth, this.viewport?.pageHeight).subscribe(
+    // Send the actual viewport dimensions (which include rotation)
+    const pageWidth = this.viewport?.width;
+    const pageHeight = this.viewport?.height;
+    console.log('Viewport object:', this.viewport);
+    console.log(`Exporting with viewport dimensions: ${pageWidth} x ${pageHeight}`);
+    
+    this.apiService.exportPdf(this.projectId, undefined, pageWidth, pageHeight).subscribe(
       (blob: Blob) => {
         this.downloadFile(blob, finalFilename);
       },
