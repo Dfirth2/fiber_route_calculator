@@ -293,7 +293,7 @@ export class ProjectEditorComponent implements OnInit {
   conduits: Conduit[] = [];
   markerLinks: MarkerLink[] = [];
   dropConduits: { index: number; from: string; to: string; lengthFt: number; pageNumber?: number }[] = [];
-  conduitMetadata: { fromId: number; fromType: 'terminal' | 'drop'; fromX?: number; fromY?: number; toId: number; toType: 'terminal' | 'drop'; toX?: number; toY?: number; lengthFt: number; pageNumber: number }[] = [];
+  conduitMetadata: { id?: number; fromId: number; fromType: 'terminal' | 'drop'; fromX?: number; fromY?: number; toId: number; toType: 'terminal' | 'drop'; toX?: number; toY?: number; lengthFt: number; pageNumber: number }[] = [];
   conduitRelationships: { terminalId: number; dropPedIds: number[] }[] = []; // Tracks which drops connect to each terminal
   assignments: any[] = []; // Store assignments for counting
   projectName: string = '';
@@ -460,6 +460,7 @@ export class ProjectEditorComponent implements OnInit {
           const dropMarker = this.markers.find(m => m.id === c.drop_ped_id);
           
           return {
+            id: c.id,  // Track database ID to avoid re-saving
             fromId: c.terminal_id,
             fromType: 'terminal' as 'terminal' | 'drop',
             fromX: terminalMarker?.x,
@@ -641,16 +642,48 @@ export class ProjectEditorComponent implements OnInit {
   onConduitsChanged(conduits: any[]) {
     // Preserve conduits from other pages, only update current page conduits
     const conduitsFromOtherPages = this.conduitMetadata.filter(c => !c.pageNumber || c.pageNumber !== this.currentPdfPage);
-    const currentPageConduits = conduits.map(c => ({ ...c, pageNumber: this.currentPdfPage }));
-    this.conduitMetadata = [...conduitsFromOtherPages, ...currentPageConduits];
+    // New conduits from the viewer don't have an ID - assign negative IDs to track them as new
+    const newConduitCounter = Math.min(...this.conduitMetadata.filter(c => !c.id || c.id < 0).map(c => c.id || 0), -1) - 1;
+    const currentPageConduits = conduits.map((c, idx) => ({
+      id: c.id !== undefined ? c.id : newConduitCounter - idx,  // Negative ID for new conduits
+      ...c,
+      pageNumber: this.currentPdfPage
+    }));
+    const epsilon = 0.01;
+    const resolveMarker = (meta: any, isFrom: boolean) => {
+      const x = isFrom ? meta.fromX : meta.toX;
+      const y = isFrom ? meta.fromY : meta.toY;
+      const id = isFrom ? meta.fromId : meta.toId;
+
+      if (x !== undefined && y !== undefined) {
+        const matchByCoord = this.markers.find(m =>
+          Math.abs(m.x - x) < epsilon &&
+          Math.abs(m.y - y) < epsilon
+        );
+        if (matchByCoord) return matchByCoord;
+      }
+
+      if (id !== undefined) {
+        return this.markers.find(m => m.id === id);
+      }
+
+      return null;
+    };
+
+    const validCurrentPageConduits = currentPageConduits.filter((meta) => {
+      const fromMarker = resolveMarker(meta, true);
+      const toMarker = resolveMarker(meta, false);
+      return !!fromMarker && !!toMarker;
+    });
+
+    this.conduitMetadata = [...conduitsFromOtherPages, ...validCurrentPageConduits];
     console.log('Conduits changed, metadata:', this.conduitMetadata);
     
     // Rebuild relationship map to update assignment counts
     this.buildRelationshipMap();
     
     // Update dropConduits with formatted conduit data
-    const epsilon = 0.01;
-    this.dropConduits = conduits.map((meta: any, index: number) => {
+    this.dropConduits = validCurrentPageConduits.map((meta: any, index: number) => {
       // Find markers by coordinates if available, otherwise by ID
       let fromMarker = null;
       let toMarker = null;
@@ -734,13 +767,25 @@ export class ProjectEditorComponent implements OnInit {
     let errorCount = 0;
     const newMarkers = this.markers.filter(m => m.id < 0);
     const newPolylines = this.polylines.filter(p => p.id < 0);
-    const totalItems = newMarkers.length + newPolylines.length + this.conduitMetadata.length;
+    const newConduits = this.conduitMetadata.filter(c => {
+      if (c.id && c.id >= 0) return false;
+
+      const epsilon = 0.01;
+      const fromMarker = (c.fromX !== undefined && c.fromY !== undefined)
+        ? this.markers.find(m => Math.abs(m.x - c.fromX) < epsilon && Math.abs(m.y - c.fromY) < epsilon)
+        : this.markers.find(m => m.id === c.fromId);
+      const toMarker = (c.toX !== undefined && c.toY !== undefined)
+        ? this.markers.find(m => Math.abs(m.x - c.toX) < epsilon && Math.abs(m.y - c.toY) < epsilon)
+        : this.markers.find(m => m.id === c.toId);
+
+      return !!fromMarker && !!toMarker;
+    });  // Only save new conduits (negative/undefined IDs) with valid markers
+    const totalItems = newMarkers.length + newPolylines.length + newConduits.length;
 
     console.log('Save Project called:', {
       newMarkers: newMarkers.length,
       newPolylines: newPolylines.length,
-      conduits: this.conduitMetadata.length,
-      conduitMetadata: this.conduitMetadata,
+      newConduits: newConduits.length,
       totalItems
     });
 
@@ -808,8 +853,8 @@ export class ProjectEditorComponent implements OnInit {
     });
 
     // Save conduits (drop conduit relationships)
-    // Look up markers by position since conduit metadata stores coordinates
-    this.conduitMetadata.forEach((meta, idx) => {
+    // Only save new conduits (those with negative or undefined IDs)
+    newConduits.forEach((meta, idx) => {
       const epsilon = 0.01;
       
       // Try to find markers by their stored coordinates
@@ -1064,19 +1109,20 @@ export class ProjectEditorComponent implements OnInit {
     const newMarkers = this.markers.filter(m => !m.id || m.id < 0);
     const newPolylines = this.polylines.filter(p => !p.id || p.id < 0);
     
-    // Conduits to save: those where both markers exist and have positive IDs
-    const conduitsToSave = this.conduitMetadata.filter(c => {
+    // Only save new conduits (those with negative or undefined IDs)
+    const newConduits = this.conduitMetadata.filter(c => {
       const fromMarker = this.markers.find(m => m.id === c.fromId);
       const toMarker = this.markers.find(m => m.id === c.toId);
-      return fromMarker && toMarker && fromMarker.id && fromMarker.id > 0 && toMarker.id && toMarker.id > 0;
+      // Conduit is new if: it has no ID/negative ID AND both markers exist with positive IDs
+      return (!c.id || c.id < 0) && fromMarker && toMarker && fromMarker.id && fromMarker.id > 0 && toMarker.id && toMarker.id > 0;
     });
     
-    const totalItems = newMarkers.length + newPolylines.length + conduitsToSave.length;
+    const totalItems = newMarkers.length + newPolylines.length + newConduits.length;
 
     console.log('Saving before export:', {
       newMarkers: newMarkers.length,
       newPolylines: newPolylines.length,
-      conduitsToSave: conduitsToSave.length,
+      newConduits: newConduits.length,
       totalItems
     });
 
@@ -1148,8 +1194,8 @@ export class ProjectEditorComponent implements OnInit {
       );
     });
 
-    // Save conduits (only those with valid marker IDs)
-    conduitsToSave.forEach((meta, idx) => {
+    // Save conduits (only new ones with valid marker IDs)
+    newConduits.forEach((meta, idx) => {
       const epsilon = 0.01;
       let fromMarker = null;
       let toMarker = null;

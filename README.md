@@ -338,3 +338,32 @@ A web application for measuring fiber routes from subdivision plats. Upload a PD
   - Label positioning logic handles variable route lengths
   - TypeScript event emitter pattern for robust dimension passing
   - Backend ReportLab canvas operations tested with real PDF exports
+
+## Update 11 - Hardened Save Project to Prevent Duplicate Conduits/Terminals
+- **Duplicate Data Prevention**:
+  - Fixed critical bug where saveProject() was saving ALL conduits/terminals, not just new ones
+  - Root cause: No tracking of which items were already saved vs. newly created
+  - Solution: Added `id` field to conduitMetadata to distinguish saved from new items
+- **Conduit Tracking System**:
+  - Database conduits loaded with their `id` property preserved
+  - New conduits created in UI assigned negative IDs (like markers/polylines)
+  - `onConduitsChanged()` now assigns unique negative IDs to freshly drawn conduits
+  - Prevents duplicate saves by filtering: `newConduits = conduitMetadata.filter(c => !c.id || c.id < 0)`
+- **Save Logic Improvements**:
+  - `saveProject()` now saves only new conduits (negative/undefined IDs)
+  - `saveProjectBeforeExport()` updated with same duplicate prevention logic
+  - Prevents re-saving already persisted conduits/terminals on subsequent saves
+  - Consistent with existing marker/polyline save patterns
+- **Type Safety**:
+  - Updated TypeScript interface to include optional `id?: number` field
+  - Maintains backward compatibility while enabling ID tracking
+  - Properly typed for both positive (saved) and negative (new) ID values
+- **Testing Impact**:
+  - Frontend build: 808.15 kB, no TypeScript errors
+  - No API changes required - backend already supports proper data handling
+  - Existing saved data not affected - only new saves filtered correctly
+- **User Impact**:
+  - Save button no longer doubles terminals/conduits on repeated clicks
+  - Projects can be saved multiple times without data duplication
+  - Performance improved by avoiding redundant API calls
+  - User experience more reliable with predictable data state
