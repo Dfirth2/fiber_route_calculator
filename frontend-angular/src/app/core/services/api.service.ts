@@ -162,4 +162,17 @@ export class ApiService {
       responseType: 'blob'
     });
   }
+
+  // Cable Configuration
+  getCableCounts(projectId: number): Observable<any> {
+    return this.http.get<any>(`${this.apiUrl}/projects/${projectId}/cable-counts`);
+  }
+
+  getCableConfiguration(projectId: number): Observable<any> {
+    return this.http.get<any>(`${this.apiUrl}/projects/${projectId}/cable-configuration`);
+  }
+
+  saveCableConfiguration(projectId: number, config: any): Observable<any> {
+    return this.http.post<any>(`${this.apiUrl}/projects/${projectId}/cable-configuration`, config);
+  }
 }

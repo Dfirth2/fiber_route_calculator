@@ -1,0 +1,22 @@
+.cdk-drop-list-dragging .cdk-drag:hover {
+  background-color: #f3f4f6 !important;
+}
+
+.cdk-drag-preview {
+  box-shadow: 0 5px 15px rgba(0, 0, 0, 0.3);
+}
+
+.cdk-drag-animating {
+  transition: transform 250ms cubic-bezier(0, 0, 0.2, 1);
+}
+
+.cdk-drop-list-dragging .cdk-drag-preview:not(:placeholder) {
+  display: none;
+}
+
+.cdk-drop-list-dragging .cdk-drag-placeholder {
+  opacity: 0.4;
+  background-color: #dbeafe;
+  border: 2px dashed #3b82f6;
+  min-height: 60px;
+}

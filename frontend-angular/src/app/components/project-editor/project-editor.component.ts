@@ -1,7 +1,7 @@
 import { Component, OnInit, ViewChild } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { ActivatedRoute } from '@angular/router';
+import { ActivatedRoute, Router } from '@angular/router';
 import { ApiService } from '../../core/services/api.service';
 import { StateService, Marker, Polyline, Conduit, MarkerLink } from '../../core/services/state.service';
 import { PDFViewerComponent } from '../pdf-viewer/pdf-viewer.component';
@@ -30,7 +30,7 @@ import { DrawingCanvasComponent } from '../drawing-canvas/drawing-canvas.compone
             Save Project
           </button>
           <button (click)="exportPdf()" class="px-3 py-2 rounded border border-gray-300 hover:bg-gray-100 font-medium text-sm">Annotated PDF</button>
-          <button (click)="exportCsv()" class="px-3 py-2 rounded border border-gray-300 hover:bg-gray-100 font-medium text-sm">Materials CSV</button>
+          <button (click)="buildCableCounts()" class="px-3 py-2 bg-purple-600 text-white rounded hover:bg-purple-700 font-medium text-sm">Build Cable Counts</button>
         </div>
       </div>
       <div class="grid grid-cols-4 gap-4 flex-1">
@@ -389,6 +389,7 @@ export class ProjectEditorComponent implements OnInit {
 
   constructor(
     private route: ActivatedRoute,
+    private router: Router,
     private apiService: ApiService,
     private stateService: StateService
   ) {
@@ -772,10 +773,10 @@ export class ProjectEditorComponent implements OnInit {
 
       const epsilon = 0.01;
       const fromMarker = (c.fromX !== undefined && c.fromY !== undefined)
-        ? this.markers.find(m => Math.abs(m.x - c.fromX) < epsilon && Math.abs(m.y - c.fromY) < epsilon)
+        ? this.markers.find(m => Math.abs(m.x - (c.fromX || 0)) < epsilon && Math.abs(m.y - (c.fromY || 0)) < epsilon)
         : this.markers.find(m => m.id === c.fromId);
       const toMarker = (c.toX !== undefined && c.toY !== undefined)
-        ? this.markers.find(m => Math.abs(m.x - c.toX) < epsilon && Math.abs(m.y - c.toY) < epsilon)
+        ? this.markers.find(m => Math.abs(m.x - (c.toX || 0)) < epsilon && Math.abs(m.y - (c.toY || 0)) < epsilon)
         : this.markers.find(m => m.id === c.toId);
 
       return !!fromMarker && !!toMarker;
@@ -1278,6 +1279,11 @@ export class ProjectEditorComponent implements OnInit {
         this.downloadFile(blob, `project_${this.projectId}_report.csv`);
       }
     );
+  }
+
+  buildCableCounts() {
+    if (!this.projectId) return;
+    window.open(`/projects/${this.projectId}/cable-builder`, '_blank');
   }
 
   private downloadFile(blob: Blob, filename: string) {
