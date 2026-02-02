@@ -199,6 +199,23 @@ A web application for measuring fiber routes from subdivision plats. Upload a PD
   - Supports complex subdivision plats spanning multiple pages with different scales
   - Clear feedback when page needs calibration
 
+  ## Update 12 - Cable Builder & Cable Counts
+  - **Cable Builder Feature**:
+    - New Cable Builder screen for configuring terminals, cables, and teather splicers
+    - Drag terminals to assign them to specific cables
+    - Terminals show letter labels (A, B, C, …) consistent with PDF viewer ordering
+    - Cable count limit is enforced based on fiber route polylines (excludes drop conduits)
+  - **Backend Additions**:
+    - New cable configuration models, schemas, service logic, and API routes
+    - Cable-counts endpoint returns terminal assignments (includes drop ped assignments)
+    - Circular teather detection and cable type/size validation
+    - Comprehensive unit tests added for cable service logic
+  - **Frontend Enhancements**:
+    - Cable Builder UI with drag-drop ordering and terminal-to-cable assignment
+    - “Build Cable Counts” button replaces Materials CSV in the editor
+    - Button opens in a new tab; Back button returns to the original tab when available
+    - Updated Angular CDK version to match Angular 19
+
 ## Update 8 - Handhole Equipment Type & Conduit Refinements
 - **New Handhole Equipment Type**:
   - Added handhole as third equipment type (alongside terminals and drop pedestals)

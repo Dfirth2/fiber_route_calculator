@@ -1,0 +1,239 @@
+<div class="min-h-screen bg-gray-50">
+  <!-- Header -->
+  <div class="bg-white border-b border-gray-200 shadow-sm">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
+      <div class="flex items-center justify-between">
+        <div>
+          <h1 class="text-3xl font-bold text-gray-900">Cable Builder</h1>
+          <p class="mt-1 text-sm text-gray-500">Configure terminals and cables for your project</p>
+        </div>
+        <div class="flex gap-2">
+          <button
+            (click)="goBack()"
+            class="px-4 py-2 bg-gray-200 text-gray-800 rounded hover:bg-gray-300 font-medium"
+          >
+            Back to Project
+          </button>
+          <button
+            (click)="saveConfiguration()"
+            [disabled]="saving"
+            class="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 font-medium disabled:opacity-50"
+          >
+            {{ saving ? 'Saving...' : 'Save Configuration' }}
+          </button>
+          <div *ngIf="savedMessage" class="text-green-600 font-medium">{{ savedMessage }}</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Main Content -->
+  <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+    <div *ngIf="loading" class="text-center text-gray-500">
+      <p>Loading configuration...</p>
+    </div>
+
+    <div *ngIf="!loading" class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+      <!-- Terminals Section -->
+      <div class="bg-white rounded-lg shadow">
+        <div class="px-6 py-4 border-b border-gray-200">
+          <h2 class="text-xl font-semibold text-gray-900">Terminals</h2>
+          <p class="text-sm text-gray-500">Drag terminals to cables to assign them</p>
+        </div>
+
+        <div
+          cdkDropList
+          [cdkDropListData]="config.terminals"
+          [cdkDropListConnectedTo]="getCableDropListIds()"
+          cdkDropListSortingDisabled
+          class="divide-y divide-gray-200"
+          (cdkDropListDropped)="dropTerminals($event)"
+        >
+          <div
+            *ngFor="let terminal of config.terminals"
+            cdkDrag
+            [cdkDragData]="terminal"
+            class="p-4 hover:bg-gray-50 cursor-move border-l-4 border-blue-500"
+          >
+            <div class="flex items-center justify-between mb-2">
+              <div class="text-lg font-bold text-blue-600">Terminal {{ terminal.label }}</div>
+              <div class="text-xs text-gray-500">{{ terminal.assignment_count }} assignments</div>
+            </div>
+            <div class="grid grid-cols-1 gap-3">
+              <div>
+                <label class="block text-xs font-medium text-gray-700 mb-1">Address</label>
+                <input
+                  type="text"
+                  [(ngModel)]="terminal.address"
+                  placeholder="e.g., 123 Main St"
+                  class="w-full px-2 py-1 border border-gray-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+
+              <div class="grid grid-cols-2 gap-2 text-sm">
+                <div>
+                  <span class="text-gray-500">Suggested Size:</span>
+                  <span class="font-semibold">{{ terminal.suggested_size }}</span>
+                </div>
+                <div>
+                  <label class="block text-xs font-medium text-gray-700 mb-1">Actual Size</label>
+                  <select
+                    [(ngModel)]="terminal.actual_size"
+                    class="w-full px-2 py-1 border border-gray-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    <option *ngFor="let size of TERMINAL_SIZES" [value]="size">{{ size }}</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Cables Section -->
+      <div class="bg-white rounded-lg shadow">
+        <div class="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
+          <div>
+            <h2 class="text-xl font-semibold text-gray-900">Cables</h2>
+            <p class="text-sm text-gray-500">Drag to reorder. Add teather splicers as needed.</p>
+          </div>
+          <div class="flex flex-col items-end gap-1">
+            <button
+              (click)="addCable()"
+              [disabled]="!canAddCable()"
+              class="px-3 py-1 bg-blue-600 text-white rounded text-sm hover:bg-blue-700 font-medium disabled:bg-gray-300 disabled:cursor-not-allowed"
+            >
+              + Add Cable
+            </button>
+            <span *ngIf="!canAddCable()" class="text-xs text-gray-500">Max cables reached ({{ maxCables }})</span>
+          </div>
+        </div>
+
+        <div class="divide-y divide-gray-200">
+          <div
+            *ngFor="let cable of config.cables; let idx = index"
+            class="p-4 border-l-4 border-green-500"
+          >
+            <div class="flex items-start justify-between mb-3">
+              <div class="font-semibold text-gray-900">Cable {{ cable.cable_number }}</div>
+              <button
+                (click)="removeCable(idx)"
+                class="text-red-600 hover:text-red-800 text-sm font-medium"
+              >
+                Remove
+              </button>
+            </div>
+
+            <!-- Assigned Terminals Drop Zone -->
+            <div 
+              cdkDropList
+              [id]="'cable-' + cable.cable_number"
+              [cdkDropListData]="cable"
+              cdkDropListSortingDisabled
+              (cdkDropListDropped)="dropTerminalOnCable($event, cable)"
+              class="mb-3 p-3 border-2 border-dashed border-gray-300 rounded bg-gray-50 min-h-[60px]"
+            >
+              <div class="text-xs font-medium text-gray-600 mb-2">Assigned Terminals (drag here)</div>
+              <div class="flex flex-wrap gap-2">
+                <div 
+                  *ngFor="let terminal of getAssignedTerminals(cable)"
+                  class="px-2 py-1 bg-blue-100 text-blue-800 rounded text-xs font-medium flex items-center gap-1"
+                >
+                  <span>Terminal {{ terminal.label }}</span>
+                  <button 
+                    (click)="removeTerminalFromCable(cable, terminal.marker_id)"
+                    class="text-blue-600 hover:text-blue-800 font-bold"
+                  >×</button>
+                </div>
+                <div *ngIf="getAssignedTerminals(cable).length === 0" class="text-xs text-gray-400 italic">
+                  No terminals assigned
+                </div>
+              </div>
+            </div>
+
+            <div class="grid grid-cols-2 gap-3 mb-3">
+              <div>
+                <label class="block text-xs font-medium text-gray-700 mb-1">Type</label>
+                <select
+                  [(ngModel)]="cable.cable_type"
+                  (change)="onCableTypeChange(cable)"
+                  class="w-full px-2 py-1 border border-gray-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
+                >
+                  <option value="BAU">BAU</option>
+                  <option value="FNAP">FNAP</option>
+                </select>
+              </div>
+
+              <div>
+                <label class="block text-xs font-medium text-gray-700 mb-1">Size</label>
+                <select
+                  [(ngModel)]="cable.cable_size"
+                  class="w-full px-2 py-1 border border-gray-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
+                >
+                  <option *ngFor="let size of getValidCableSizes(cable.cable_type)" [value]="size">
+                    {{ size }}
+                  </option>
+                </select>
+              </div>
+            </div>
+
+            <!-- Teather Splicers for this cable -->
+            <div class="mt-4 pt-4 border-t border-gray-200">
+              <div class="flex items-center justify-between mb-2">
+                <span class="text-sm font-medium text-gray-700">Teather Splicers</span>
+                <button
+                  (click)="addTeather(idx)"
+                  class="text-xs px-2 py-1 bg-purple-100 text-purple-700 rounded hover:bg-purple-200 font-medium"
+                >
+                  + Add Teather
+                </button>
+              </div>
+
+              <div *ngIf="getTeathersForCable(cable.cable_number).length === 0" class="text-xs text-gray-500">
+                No teathers
+              </div>
+
+              <div *ngFor="let teather of getTeathersForCable(cable.cable_number)" class="mt-2 p-2 bg-purple-50 rounded border border-purple-200">
+                <div class="grid grid-cols-1 gap-2">
+                  <div>
+                    <label class="block text-xs font-medium text-gray-700 mb-1">Target Cable</label>
+                    <select
+                      [value]="teather.target_cable_id"
+                      (change)="updateTeatherTargetCable(teather, $any($event).target.value)"
+                      class="w-full px-2 py-1 border border-gray-300 rounded text-xs focus:outline-none focus:ring-2 focus:ring-purple-500"
+                    >
+                      <option *ngFor="let c of config.cables" [value]="c.cable_number">
+                        Cable {{ c.cable_number }}
+                      </option>
+                    </select>
+                  </div>
+
+                  <div class="grid grid-cols-2 gap-2">
+                    <div>
+                      <label class="block text-xs font-medium text-gray-700 mb-1">Divert Count (strands)</label>
+                      <select
+                        [value]="teather.divert_count"
+                        (change)="updateTeatherDivertCount(teather, $any($event).target.value)"
+                        class="w-full px-2 py-1 border border-gray-300 rounded text-xs focus:outline-none focus:ring-2 focus:ring-purple-500"
+                      >
+                        <option *ngFor="let opt of TEATHER_OPTIONS" [value]="opt">{{ opt }}</option>
+                      </select>
+                    </div>
+                    <div class="flex items-end">
+                      <button
+                        (click)="removeTeather(getTeatherIndex(teather))"
+                        class="w-full px-2 py-1 text-red-600 hover:text-red-800 text-xs font-medium border border-red-300 rounded hover:bg-red-50"
+                      >
+                        Remove
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>

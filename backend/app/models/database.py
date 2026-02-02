@@ -36,6 +36,7 @@ class Project(Base):
     scale_calibrations = relationship("ScaleCalibration", back_populates="project", cascade="all, delete-orphan")
     markers = relationship("Marker", back_populates="project", cascade="all, delete-orphan")
     conduits = relationship("Conduit", back_populates="project", cascade="all, delete-orphan")
+    cable_configuration = relationship("CableConfiguration", back_populates="project", uselist=False, cascade="all, delete-orphan")
 
 class ScaleCalibration(Base):
     __tablename__ = "scale_calibrations"
