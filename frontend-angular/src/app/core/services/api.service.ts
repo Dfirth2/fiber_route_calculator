@@ -53,6 +53,10 @@ export class ApiService {
     return this.http.post<any>(`${this.apiUrl}/projects/${projectId}/markers`, marker);
   }
 
+  updateMarker(projectId: number, markerId: number, marker: any): Observable<any> {
+    return this.http.put<any>(`${this.apiUrl}/projects/${projectId}/markers/${markerId}`, marker);
+  }
+
   deleteMarker(projectId: number, markerId: number): Observable<any> {
     return this.http.delete<any>(`${this.apiUrl}/projects/${projectId}/markers/${markerId}`);
   }
@@ -64,6 +68,10 @@ export class ApiService {
 
   addPolyline(projectId: number, polyline: any): Observable<any> {
     return this.http.post<any>(`${this.apiUrl}/projects/${projectId}/polylines`, polyline);
+  }
+
+  updatePolyline(projectId: number, polylineId: number, polyline: any): Observable<any> {
+    return this.http.put<any>(`${this.apiUrl}/projects/${projectId}/polylines/${polylineId}`, polyline);
   }
 
   deletePolyline(projectId: number, polylineId: number): Observable<any> {
@@ -86,6 +94,10 @@ export class ApiService {
 
   addConduit(projectId: number, conduit: any): Observable<any> {
     return this.http.post<any>(`${this.apiUrl}/projects/${projectId}/conduits`, conduit);
+  }
+
+  updateConduit(projectId: number, conduitId: number, conduit: any): Observable<any> {
+    return this.http.put<any>(`${this.apiUrl}/projects/${projectId}/conduits/${conduitId}`, conduit);
   }
 
   deleteConduit(projectId: number, conduitId: number): Observable<any> {
@@ -146,7 +158,7 @@ export class ApiService {
     });
   }
 
-  exportPdf(projectId: number, pageNumber?: number, pageWidth?: number, pageHeight?: number): Observable<Blob> {
+  exportPdf(projectId: number, pageNumber?: number, pageWidth?: number, pageHeight?: number, rotation?: number): Observable<Blob> {
     let params = new HttpParams();
     if (pageNumber !== undefined) {
       params = params.set('page_number', pageNumber.toString());
@@ -156,6 +168,9 @@ export class ApiService {
     }
     if (pageHeight !== undefined) {
       params = params.set('page_height', pageHeight.toString());
+    }
+    if (rotation !== undefined) {
+      params = params.set('rotation', rotation.toString());
     }
     return this.http.get(`${this.apiUrl}/exports/${projectId}/pdf`, {
       params,

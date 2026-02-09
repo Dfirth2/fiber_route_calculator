@@ -302,7 +302,8 @@ def get_polylines(project_id: int, db: Session = Depends(get_db)):
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
     
-    polylines = db.query(Polyline).filter(Polyline.project_id == project_id).all()
+    # Order by ID to ensure consistent ordering across page reloads
+    polylines = db.query(Polyline).filter(Polyline.project_id == project_id).order_by(Polyline.id).all()
     return polylines
 
 @router.post("/{project_id}/polylines", response_model=PolylineResponse)
@@ -482,7 +483,35 @@ def get_markers(
     if page_number is not None:
         query = query.filter(Marker.page_number == page_number)
     
-    return query.all()
+    # Order by ID to ensure consistent ordering across page reloads
+    return query.order_by(Marker.id).all()
+
+
+@router.put("/{project_id}/markers/{marker_id}", response_model=MarkerResponse)
+def update_marker(
+    project_id: int,
+    marker_id: int,
+    marker: MarkerCreate,
+    db: Session = Depends(get_db),
+):
+    """Update a marker (terminal, drop pedestal, or handhole)."""
+    db_marker = db.query(Marker).filter(
+        Marker.id == marker_id,
+        Marker.project_id == project_id,
+    ).first()
+
+    if not db_marker:
+        raise HTTPException(status_code=404, detail="Marker not found")
+
+    db_marker.page_number = marker.page_number
+    db_marker.marker_type = marker.marker_type
+    db_marker.x = marker.x
+    db_marker.y = marker.y
+
+    db.commit()
+    db.refresh(db_marker)
+
+    return db_marker
 
 
 @router.delete("/{project_id}/markers/{marker_id}")
@@ -522,6 +551,18 @@ def create_marker_link(
     if not marker:
         raise HTTPException(status_code=404, detail="Marker not found")
     
+    # Check if this link already exists (prevent duplicates)
+    existing_link = db.query(MarkerLink).filter(
+        MarkerLink.marker_id == link.marker_id,
+        MarkerLink.to_x == link.to_x,
+        MarkerLink.to_y == link.to_y,
+        MarkerLink.page_number == link.page_number,
+    ).first()
+    
+    if existing_link:
+        # Link already exists, return it instead of creating a duplicate
+        return existing_link
+    
     db_link = MarkerLink(
         marker_id=link.marker_id,
         page_number=link.page_number,
@@ -549,7 +590,8 @@ def get_marker_links(
     if page_number is not None:
         query = query.filter(MarkerLink.page_number == page_number)
     
-    return query.all()
+    # Order by ID to ensure consistent ordering across page reloads
+    return query.order_by(MarkerLink.id).all()
 
 
 @router.delete("/{project_id}/marker-links/{link_id}")
@@ -606,6 +648,17 @@ def create_conduit(
     if terminal.marker_type not in ['terminal', 'dropPed']:
         raise HTTPException(status_code=400, detail="terminal_id must reference a terminal or drop pedestal marker")
     
+    # Check if this conduit already exists (prevent duplicates)
+    existing_conduit = db.query(Conduit).filter(
+        Conduit.terminal_id == conduit.terminal_id,
+        Conduit.drop_ped_id == conduit.drop_ped_id,
+        Conduit.page_number == conduit.page_number,
+    ).first()
+    
+    if existing_conduit:
+        # Conduit already exists, return it instead of creating a duplicate
+        return existing_conduit
+    
     db_conduit = Conduit(
         project_id=project_id,
         page_number=conduit.page_number,
@@ -630,11 +683,64 @@ def get_conduits(
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
     
-    query = db.query(Conduit).filter(Conduit.project_id == project_id)
+    query = db.query(Conduit).filter(
+        Conduit.project_id == project_id,
+        Conduit.terminal_id.isnot(None),
+        Conduit.drop_ped_id.isnot(None),
+    )
     if page_number is not None:
         query = query.filter(Conduit.page_number == page_number)
     
-    return query.all()
+    # Order by ID to ensure consistent ordering across page reloads
+    return query.order_by(Conduit.id).all()
+
+
+@router.put("/{project_id}/conduits/{conduit_id}", response_model=ConduitResponse)
+def update_conduit(
+    project_id: int,
+    conduit_id: int,
+    conduit: ConduitCreate,
+    db: Session = Depends(get_db),
+):
+    """Update a conduit connection between terminal and drop pedestal."""
+    db_conduit = db.query(Conduit).filter(
+        Conduit.id == conduit_id,
+        Conduit.project_id == project_id,
+    ).first()
+
+    if not db_conduit:
+        raise HTTPException(status_code=404, detail="Conduit not found")
+
+    terminal = db.query(Marker).filter(
+        Marker.id == conduit.terminal_id,
+        Marker.project_id == project_id,
+    ).first()
+
+    drop_ped = db.query(Marker).filter(
+        Marker.id == conduit.drop_ped_id,
+        Marker.project_id == project_id,
+    ).first()
+
+    if not terminal or not drop_ped:
+        raise HTTPException(status_code=404, detail="Terminal or drop pedestal not found")
+
+    # Validate endpoint types: must be (terminal -> dropPed) or (dropPed -> dropPed)
+    if drop_ped.marker_type != 'dropPed':
+        raise HTTPException(status_code=400, detail="drop_ped_id must reference a drop pedestal marker")
+    if terminal.marker_type == 'terminal' and drop_ped.marker_type == 'terminal':
+        raise HTTPException(status_code=400, detail="Conduit cannot connect terminal to terminal")
+    if terminal.marker_type not in ['terminal', 'dropPed']:
+        raise HTTPException(status_code=400, detail="terminal_id must reference a terminal or drop pedestal marker")
+
+    db_conduit.page_number = conduit.page_number
+    db_conduit.terminal_id = conduit.terminal_id
+    db_conduit.drop_ped_id = conduit.drop_ped_id
+    db_conduit.footage = conduit.footage
+
+    db.commit()
+    db.refresh(db_conduit)
+
+    return db_conduit
 
 
 @router.delete("/{project_id}/conduits/{conduit_id}")

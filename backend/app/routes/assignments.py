@@ -26,6 +26,18 @@ def create_assignment(
     if not marker:
         raise HTTPException(status_code=404, detail="Marker not found")
     
+    # Check if this link already exists (prevent duplicates)
+    existing_link = db.query(MarkerLink).filter(
+        MarkerLink.marker_id == assignment.marker_id,
+        MarkerLink.to_x == assignment.to_x,
+        MarkerLink.to_y == assignment.to_y,
+        MarkerLink.page_number == assignment.page_number,
+    ).first()
+    
+    if existing_link:
+        # Link already exists, return it instead of creating a duplicate
+        return existing_link
+    
     link = MarkerLink(
         marker_id=assignment.marker_id,
         page_number=assignment.page_number,
@@ -46,7 +58,7 @@ def get_assignments(project_id: int, db: Session = Depends(get_db)):
     
     links = db.query(MarkerLink).join(Marker).filter(
         Marker.project_id == project_id
-    ).all()
+    ).order_by(MarkerLink.id).all()
     return links
 
 @router.delete("/{project_id}/assignments/{assignment_id}")

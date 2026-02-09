@@ -55,6 +55,24 @@ class CableConfig(Base):
     cable_config = relationship("CableConfiguration", back_populates="cables")
     teathers_from = relationship("TeatherSplicer", foreign_keys="TeatherSplicer.cable_id", back_populates="cable")
     teathers_to = relationship("TeatherSplicer", foreign_keys="TeatherSplicer.target_cable_id", back_populates="target_cable")
+    terminal_assignments = relationship("CableTerminalAssignment", back_populates="cable", cascade="all, delete-orphan")
+
+
+class CableTerminalAssignment(Base):
+    """Junction table for cable-to-terminal assignments."""
+    __tablename__ = "cable_terminal_assignments"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    cable_id = Column(Integer, ForeignKey("cable_configs.id"), nullable=False)
+    terminal_marker_id = Column(Integer, ForeignKey("markers.id"), nullable=False)
+    order = Column(Integer, default=0)  # Order of assignment for display
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    
+    # Ensure unique cable-terminal pairs
+    __table_args__ = (UniqueConstraint('cable_id', 'terminal_marker_id', name='_cable_terminal_uc'),)
+    
+    cable = relationship("CableConfig", back_populates="terminal_assignments")
+    marker = relationship("Marker", foreign_keys=[terminal_marker_id])
 
 
 class TeatherSplicer(Base):

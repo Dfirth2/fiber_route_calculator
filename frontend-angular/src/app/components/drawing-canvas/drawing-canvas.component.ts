@@ -1,4 +1,4 @@
-import { Component, ViewChild, ElementRef, Input, OnInit, AfterViewInit, OnDestroy } from '@angular/core';
+import { Component, ViewChild, ElementRef, Input, OnInit, AfterViewInit, OnDestroy, SimpleChanges, OnChanges } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { StateService, Marker, Polyline, Assignment } from '../../core/services/state.service';
 
@@ -18,7 +18,7 @@ import { StateService, Marker, Polyline, Assignment } from '../../core/services/
     ></canvas>
   `
 })
-export class DrawingCanvasComponent implements OnInit, AfterViewInit, OnDestroy {
+export class DrawingCanvasComponent implements OnInit, AfterViewInit, OnDestroy, OnChanges {
   @ViewChild('drawingCanvas') canvasRef!: ElementRef<HTMLCanvasElement>;
   @Input() pdfCanvas: HTMLCanvasElement | null = null;
   @Input() viewport: any;
@@ -38,12 +38,27 @@ export class DrawingCanvasComponent implements OnInit, AfterViewInit, OnDestroy 
   ) {}
 
   ngOnInit() {
+    this.updateViewportScale();
+  }
+
+  ngOnChanges(changes: SimpleChanges) {
+    // Update viewport scale whenever viewport input changes (including zoom)
+    if (changes['viewport'] && !changes['viewport'].firstChange) {
+      this.updateViewportScale();
+    }
+  }
+
+  private updateViewportScale() {
     if (this.viewport) {
       this.viewportScale = this.viewport.scale || 1;
       this.pageDims = {
         width: this.viewport.pageWidth || 1728,
         height: this.viewport.pageHeight || 2592
       };
+      // Redraw to reflect new scale (only if canvas is already initialized)
+      if (this.context) {
+        this.redraw();
+      }
     }
   }
 
