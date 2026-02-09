@@ -106,6 +106,11 @@ export class CableBuilderComponent implements OnInit {
                 label: t.label ?? labelByMarkerId.get(markerId)
               };
             });
+            // Ensure cables have assigned_terminals array and remove duplicates
+            this.config.cables = (this.config.cables || []).map((c: any) => ({
+              ...c,
+              assigned_terminals: Array.from(new Set(c.assigned_terminals || []))
+            }));
             this.loading = false;
           },
           error: () => {
@@ -189,10 +194,10 @@ export class CableBuilderComponent implements OnInit {
       cable.assigned_terminals = [];
     }
     
-    // Check if terminal is already assigned to this cable
-    if (!cable.assigned_terminals.includes(terminal.marker_id)) {
-      cable.assigned_terminals.push(terminal.marker_id);
-    }
+    // Prevent duplicates - use Set to ensure uniqueness
+    const uniqueTerminals = new Set(cable.assigned_terminals);
+    uniqueTerminals.add(terminal.marker_id);
+    cable.assigned_terminals = Array.from(uniqueTerminals);
   }
 
   removeTerminalFromCable(cable: Cable, terminalMarkerId: number) {
@@ -278,7 +283,8 @@ export class CableBuilderComponent implements OnInit {
         cable_number: c.cable_number,
         cable_type: c.cable_type,
         cable_size: c.cable_size,
-        order: c.order
+        order: c.order,
+        assigned_terminals: c.assigned_terminals || []  // Include terminal assignments
       })),
       teathers: this.config.teathers
     };

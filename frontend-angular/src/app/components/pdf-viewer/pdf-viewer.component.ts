@@ -35,9 +35,11 @@ export class PDFViewerComponent implements OnInit, OnChanges {
   pdf: any = null;
   currentPage = 1;
   zoom = 1;
+  rotation = 0; // 0, 90, 180, 270 degrees
   panOffset = { x: 0, y: 0 };
   isPanning = false;
   Math = Math;
+  private pageZoomLevels: Map<number, number> = new Map(); // Store zoom level per page
 
   mode: 'pan' | 'calibrate' | 'fiber' | 'conduit' | 'terminal' | 'drop' | 'handhole' | 'assign' | 'erase' = 'pan';
   calibrationPoints: { x: number; y: number }[] = [];
@@ -77,6 +79,7 @@ export class PDFViewerComponent implements OnInit, OnChanges {
   @Output() conduitsChanged = new EventEmitter<any[]>();
   @Output() currentPageChanged = new EventEmitter<number>();
   @Output() viewportChanged = new EventEmitter<any>();
+  @Output() rotationChanged = new EventEmitter<number>();
 
   constructor(private apiService: ApiService, private stateService: StateService) {}
 
@@ -194,6 +197,8 @@ export class PDFViewerComponent implements OnInit, OnChanges {
       const typedArray = new Uint8Array(buffer);
       this.pdf = await pdfjsLib.getDocument({ data: typedArray }).promise;
       this.currentPage = 1;
+      this.zoom = 1;
+      this.pageZoomLevels.clear(); // Reset per-page zoom tracking for new PDF
       this.panOffset = { x: 0, y: 0 };
       await this.renderPage();
       // Load calibration and markers after PDF and page are ready
@@ -266,7 +271,7 @@ export class PDFViewerComponent implements OnInit, OnChanges {
     const rect = this.overlayRef.nativeElement.getBoundingClientRect();
     const x = event.clientX - rect.left;
     const y = event.clientY - rect.top;
-    const pdfPoint = { x: x / this.zoom, y: y / this.zoom };
+    const pdfPoint = this.screenToPdfCoordinates(x, y);
 
     if (this.mode === 'erase') {
       this.handleEraseClick(pdfPoint);
@@ -475,7 +480,7 @@ export class PDFViewerComponent implements OnInit, OnChanges {
         const rect = this.overlayRef.nativeElement.getBoundingClientRect();
         const x = event.clientX - rect.left;
         const y = event.clientY - rect.top;
-        this.hoverPoint = { x: x / this.zoom, y: y / this.zoom };
+        this.hoverPoint = this.screenToPdfCoordinates(x, y);
         this.redrawOverlay();
       }
       return;
@@ -504,16 +509,85 @@ export class PDFViewerComponent implements OnInit, OnChanges {
   }
 
   getTransform(): string {
-    return `translate(${this.panOffset.x}px, ${this.panOffset.y}px)`;
+    // Rotation around center is handled by CSS transform-origin in the template
+    return `translate(${this.panOffset.x}px, ${this.panOffset.y}px) rotate(${this.rotation}deg)`;
+  }
+
+  rotateClockwise() {
+    this.rotation = (this.rotation + 90) % 360;
+    this.rotationChanged.emit(this.rotation);
+  }
+
+  rotateCounterClockwise() {
+    this.rotation = (this.rotation - 90 + 360) % 360;
+    this.rotationChanged.emit(this.rotation);
+  }
+
+  /**
+   * Transform screen coordinates to PDF coordinates accounting for zoom and rotation
+   */
+  private screenToPdfCoordinates(screenX: number, screenY: number): { x: number; y: number } {
+    if (!this.canvasRef) return { x: screenX / this.zoom, y: screenY / this.zoom };
+    
+    const canvas = this.canvasRef.nativeElement;
+    const centerX = canvas.width / 2;
+    const centerY = canvas.height / 2;
+    
+    // Translate to origin (center of canvas)
+    let x = screenX - centerX;
+    let y = screenY - centerY;
+    
+    // Apply inverse rotation
+    const angleRad = (-this.rotation * Math.PI) / 180;
+    const cos = Math.cos(angleRad);
+    const sin = Math.sin(angleRad);
+    const rotatedX = x * cos - y * sin;
+    const rotatedY = x * sin + y * cos;
+    
+    // Translate back and scale
+    const pdfX = (rotatedX + centerX) / this.zoom;
+    const pdfY = (rotatedY + centerY) / this.zoom;
+    
+    return { x: pdfX, y: pdfY };
+  }
+
+  /**
+   * Transform PDF coordinates to screen coordinates accounting for zoom and rotation
+   */
+  private pdfToScreenCoordinates(pdfX: number, pdfY: number): { x: number; y: number } {
+    if (!this.canvasRef) return { x: pdfX * this.zoom, y: pdfY * this.zoom };
+    
+    const canvas = this.canvasRef.nativeElement;
+    const centerX = (canvas.width / this.zoom) / 2;
+    const centerY = (canvas.height / this.zoom) / 2;
+    
+    // Translate to origin (center of PDF)
+    let x = pdfX - centerX;
+    let y = pdfY - centerY;
+    
+    // Apply rotation
+    const angleRad = (this.rotation * Math.PI) / 180;
+    const cos = Math.cos(angleRad);
+    const sin = Math.sin(angleRad);
+    const rotatedX = x * cos - y * sin;
+    const rotatedY = x * sin + y * cos;
+    
+    // Translate back and scale
+    const screenX = (rotatedX + centerX) * this.zoom;
+    const screenY = (rotatedY + centerY) * this.zoom;
+    
+    return { x: screenX, y: screenY };
   }
 
   zoomIn() {
     this.zoom = Math.min(3, this.zoom * 1.2);
+    this.pageZoomLevels.set(this.currentPage, this.zoom);
     this.renderPage();
   }
 
   zoomOut() {
     this.zoom = Math.max(0.5, this.zoom / 1.2);
+    this.pageZoomLevels.set(this.currentPage, this.zoom);
     this.renderPage();
   }
 
@@ -1205,7 +1279,13 @@ export class PDFViewerComponent implements OnInit, OnChanges {
 
   async nextPage() {
     if (this.pdf && this.currentPage < this.pdf.numPages) {
+      // Save zoom level for current page before moving
+      this.pageZoomLevels.set(this.currentPage, this.zoom);
+      
       this.currentPage++;
+      // Restore zoom level for new page or use default
+      this.zoom = this.pageZoomLevels.get(this.currentPage) || 1;
+      
       this.currentPageChanged.emit(this.currentPage);
       await this.renderPage();
       // Reload calibration and markers for the new page
@@ -1220,7 +1300,13 @@ export class PDFViewerComponent implements OnInit, OnChanges {
 
   async prevPage() {
     if (this.pdf && this.currentPage > 1) {
+      // Save zoom level for current page before moving
+      this.pageZoomLevels.set(this.currentPage, this.zoom);
+      
       this.currentPage--;
+      // Restore zoom level for new page or use default
+      this.zoom = this.pageZoomLevels.get(this.currentPage) || 1;
+      
       this.currentPageChanged.emit(this.currentPage);
       await this.renderPage();
       // Reload calibration and markers for the new page

@@ -25,6 +25,7 @@ def overlay_drawings_on_pdf(
     single_page: int = None,
     page_width: float = None,
     page_height: float = None,
+    rotation: int = 0,
     # Legacy parameters for backward compatibility
     polylines: List[Dict] = None,
     markers: List[Dict] = None,
@@ -42,6 +43,7 @@ def overlay_drawings_on_pdf(
         single_page: If provided, only overlay this specific page (1-indexed)
         page_width: Rendered page width from frontend
         page_height: Rendered page height from frontend
+        rotation: User-applied rotation in degrees (0, 90, 180, 270)
 
     Returns:
         Bytes of the PDF with route overlays
@@ -112,6 +114,15 @@ def overlay_drawings_on_pdf(
                         except Exception as e:
                             # Log but don't fail - just include original page
                             print(f"Warning: Could not overlay content on page {current_page_num}: {e}")
+                
+                # Apply user-specified rotation to the page
+                if rotation != 0:
+                    if rotation == 90:
+                        page.rotate(90)
+                    elif rotation == 180:
+                        page.rotate(180)
+                    elif rotation == 270:
+                        page.rotate(270)
                 
                 pdf_writer.add_page(page)
             
@@ -274,8 +285,11 @@ def _create_overlay_content(
                     
                     # Only label routes longer than 150 pixels (skip short conduit-like polylines)
                     if total_length >= 150:
-                        # Count which fiber route this is (skip conduits in numbering)
-                        fiber_count = sum(1 for p in polylines[:idx+1] if p.get("type", "fiber") != "conduit")
+                        # Use global cable number if provided, otherwise count locally
+                        fiber_count = polyline.get("global_index")
+                        if fiber_count is None:
+                            # Fallback: count which fiber route this is (skip conduits in numbering)
+                            fiber_count = sum(1 for p in polylines[:idx+1] if p.get("type", "fiber") != "conduit")
                         
                         # For short routes (< 300 pixels), use single label at midpoint
                         # For longer routes, use labels at 25% and 75%

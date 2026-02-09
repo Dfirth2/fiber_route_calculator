@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Float, DateTime, ForeignKey, JSON, Text
+from sqlalchemy import Column, Integer, String, Float, DateTime, ForeignKey, JSON, Text, UniqueConstraint
 from sqlalchemy.orm import relationship
 from datetime import datetime, timezone
 from app.db.database import Base
@@ -97,6 +97,9 @@ class MarkerLink(Base):
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
     
+    # Prevent duplicate links from same marker to same target
+    __table_args__ = (UniqueConstraint('marker_id', 'to_x', 'to_y', 'page_number', name='_marker_link_uc'),)
+    
     marker = relationship("Marker", back_populates="links")
 
 class Conduit(Base):
@@ -110,6 +113,9 @@ class Conduit(Base):
     footage = Column(Float)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    # Prevent duplicate conduits between same terminals on same page
+    __table_args__ = (UniqueConstraint('terminal_id', 'drop_ped_id', 'page_number', name='_conduit_uc'),)
     
     project = relationship("Project", back_populates="conduits")
     terminal = relationship("Marker", foreign_keys=[terminal_id], back_populates="conduits_from")

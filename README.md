@@ -384,3 +384,77 @@ A web application for measuring fiber routes from subdivision plats. Upload a PD
   - Projects can be saved multiple times without data duplication
   - Performance improved by avoiding redundant API calls
   - User experience more reliable with predictable data state
+## Update 13 - Autosave, Per-Page Zoom, Global Cable Numbering & Export Fixes
+- **Smart Autosave System**:
+  - Implemented intelligent dirty-checking to detect actual changes before saving
+  - Autosave triggers automatically 1.2 seconds after user stops making changes
+  - Only saves items that are new, modified, or deleted (no unnecessary database writes)
+  - Compares current state to snapshots (originalMarkers, originalPolylines, originalConduits)
+  - Manual "Save Now" button preserved alongside autosave for explicit user control
+  - Loading state tracking prevents autosave during project load (avoids race conditions)
+  - Export workflow queues if autosave is in flight to ensure data consistency
+  - Uses RxJS debounceTime(1200ms) with proper cleanup on component destroy
+- **Graceful Delete Error Handling**:
+  - Delete operations now treat 404 responses as success (item already deleted)
+  - Applies to marker, polyline, and conduit deletion endpoints
+  - Prevents false error alerts when attempting to delete already-removed items
+  - Improves reliability when multiple delete operations occur in sequence
+  - User experience: No more confusing "Failed to delete" errors for non-existent items
+- **Per-Page Zoom Persistence**:
+  - Each PDF page now maintains its own independent zoom level
+  - Zoom levels stored in Map<page_number, zoom_level> for all pages
+  - Navigating between pages restores the zoom level for that specific page
+  - Default zoom (1.0 or 100%) applied to pages not yet zoomed
+  - Works seamlessly with multi-page PDFs (2, 5, 10, or 100+ pages)
+  - Page zoom map cleared when loading a new PDF
+  - Zoom buttons (+ and −) save zoom level for current page
+- **Conduit Sidebar Robustness**:
+  - Sidebar now displays all drop conduits, even if markers can't be resolved
+  - Unresolved markers show as "Unknown" instead of hiding the entire conduit
+  - Fixes issue where drawn conduits appeared on canvas but not in sidebar
+  - Uses all current page conduits instead of only validated ones
+  - Consistent with canvas rendering behavior (shows all conduits regardless)
+- **Global Cable Numbering System**:
+  - Fiber cable numbers now continuous across all pages (1, 2, 3... globally)
+  - Page 1: Cable 1, 2, 3 → Page 2: Cable 4, 5 (not reset to 1)
+  - Numbering based on sorted order (page_number, then ID) for consistency
+  - Both sidebar and PDF export use the same global numbering scheme
+  - Eliminates confusion when referencing cables across multi-page projects
+  - `fiberSegments` getter computes global indices for all pages
+  - Backend export adds `global_index` property to each polyline
+- **Drop Conduit Export Exclusion**:
+  - Fixed critical bug where drop conduits were counted as fiber cables in exports
+  - Drop conduits now properly excluded from cable numbering in PDF exports
+  - Frontend filters `type === 'conduit'` polylines from save operations
+  - Backend filters polylines with "Conduit" in name before export numbering
+  - Clean separation: Conduits stored in Conduit table, fiber cables in Polyline table
+  - Export now shows only actual fiber cables numbered (not conduits)
+  - User Impact: 1 fiber cable + 3 drop conduits = only cable #1 shown (not #1-4)
+- **Backend Updates**:
+  - Added PUT /projects/{id}/markers/{markerId} for marker updates
+  - Added PUT /projects/{id}/conduits/{conduitId} for conduit updates
+  - Export endpoint sorts polylines and filters conduits before numbering
+  - 404-tolerant delete handlers for markers, polylines, conduits
+  - All update endpoints validate foreign key relationships and type constraints
+- **Frontend Architecture**:
+  - Added OnDestroy lifecycle hook with RxJS cleanup (destroy$ Subject)
+  - Autosave stream setup in ngOnInit with debounceTime and takeUntil
+  - isLoadingProject flag prevents autosave during initial data load
+  - pendingProjectLoads counter tracks async load operations
+  - scheduleAutoSave() method connected to all change handlers
+  - syncOriginalState() updates snapshots after successful save
+  - saveProjectInternal() supports both silent autosave and alert-on-save modes
+  - Per-page zoom stored in private Map with get/set on page navigation
+- **Code Quality**:
+  - Dirty-checking pattern: snapshot on load, compare on save, sync after success
+  - Proper TypeScript typing with globalIndex property on fiber segments
+  - RxJS Subject pattern for autosave with proper memory leak prevention
+  - Frontend build: 903.40 kB with zero TypeScript errors
+  - All services restarted successfully with no breaking changes
+- **User Experience Improvements**:
+  - No more manual saving required - work is automatically preserved
+  - Zoom levels persist as users navigate multi-page documents
+  - Cable references consistent across pages (no confusion about numbering)
+  - Export PDFs accurately reflect fiber cable count (not inflated by conduits)
+  - "No changes to save" alert when manually saving unchanged data
+  - Seamless autosave with no UI blocking or performance degradation

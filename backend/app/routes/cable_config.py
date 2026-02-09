@@ -90,6 +90,7 @@ def create_cable_configuration(
         db.add(db_terminal)
     
     # Add cables
+    cable_id_map = {}  # Map cable_number to db cable id
     for i, cable in enumerate(config.cables):
         db_cable = CableConfig(
             cable_config_id=db_config.id,
@@ -99,8 +100,22 @@ def create_cable_configuration(
             order=i
         )
         db.add(db_cable)
+        db.flush()  # Get the ID immediately
+        cable_id_map[cable.cable_number] = db_cable.id
+        
+        # Add terminal assignments for this cable
+        for terminal_marker_id in cable.assigned_terminals:
+            # Verify terminal marker exists
+            marker = db.query(Marker).filter(Marker.id == terminal_marker_id).first()
+            if marker:
+                from app.models.cable_config import CableTerminalAssignment
+                assignment = CableTerminalAssignment(
+                    cable_id=db_cable.id,
+                    terminal_marker_id=terminal_marker_id
+                )
+                db.add(assignment)
     
-    db.flush()  # Get cable IDs
+    db.flush()  # Ensure all cables and assignments have IDs
     
     # Add teathers
     for teather in config.teathers:
@@ -148,7 +163,56 @@ def get_cable_configuration(
     if not config:
         raise HTTPException(status_code=404, detail="Cable configuration not found")
     
-    return config
+    # Manually build response to include assigned_terminals
+    response_data = {
+        "id": config.id,
+        "project_id": config.project_id,
+        "name": config.name,
+        "created_at": config.created_at,
+        "updated_at": config.updated_at,
+        "terminals": [
+            {
+                "id": t.id,
+                "cable_config_id": t.cable_config_id,
+                "terminal_marker_id": t.terminal_marker_id,
+                "address": t.address,
+                "suggested_size": t.suggested_size,
+                "actual_size": t.actual_size,
+                "order": t.order,
+                "created_at": t.created_at,
+                "updated_at": t.updated_at
+            }
+            for t in config.terminals
+        ],
+        "cables": [
+            {
+                "id": c.id,
+                "cable_config_id": c.cable_config_id,
+                "cable_number": c.cable_number,
+                "cable_type": c.cable_type,
+                "cable_size": c.cable_size,
+                "order": c.order,
+                "assigned_terminals": [a.terminal_marker_id for a in c.terminal_assignments],
+                "created_at": c.created_at,
+                "updated_at": c.updated_at
+            }
+            for c in config.cables
+        ],
+        "teathers": [
+            {
+                "id": th.id,
+                "cable_config_id": th.cable_config_id,
+                "cable_id": th.cable_id,
+                "target_cable_id": th.target_cable_id,
+                "divert_count": th.divert_count,
+                "created_at": th.created_at,
+                "updated_at": th.updated_at
+            }
+            for th in config.teathers
+        ]
+    }
+    
+    return response_data
 
 
 @router.get("/{project_id}/cable-counts")

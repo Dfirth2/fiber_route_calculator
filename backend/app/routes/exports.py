@@ -126,6 +126,7 @@ def export_pdf_with_overlays(
     page_number: int = Query(None, description="Specific page to export (default: all pages)"),
     page_width: float = Query(None, description="Rendered page width from frontend"),
     page_height: float = Query(None, description="Rendered page height from frontend"),
+    rotation: int = Query(0, description="PDF rotation in degrees (0, 90, 180, 270)"),
     db: Session = Depends(get_db),
 ):
     """Export PDF with all drawn routes, markers, and annotations overlaid on all pages."""
@@ -144,7 +145,14 @@ def export_pdf_with_overlays(
     marker_links = db.query(MarkerLink).join(Marker).filter(Marker.project_id == project_id).all()
     conduits = db.query(Conduit).filter(Conduit.project_id == project_id).all()
     
-    # Organize data by page number
+    # Filter out any polylines that are actually conduits (legacy data)
+    # Real fiber routes shouldn't have "Conduit" in the name
+    fiber_polylines = [p for p in polylines if "Conduit" not in (p.name or "")]
+    
+    # Sort polylines by page_number and id for consistent global numbering
+    sorted_polylines = sorted(fiber_polylines, key=lambda p: (p.page_number, p.id))
+    
+    # Organize data by page number with global cable numbers
     all_data = {
         "polylines": [
             {
@@ -153,8 +161,9 @@ def export_pdf_with_overlays(
                 "points": p.points,
                 "length_ft": p.length_ft,
                 "type": "fiber",  # All polylines in DB are fiber routes (conduits are separate)
+                "global_index": idx + 1,  # Global cable number across all pages
             }
-            for p in polylines
+            for idx, p in enumerate(sorted_polylines)
         ],
         "markers": [
             {
@@ -197,6 +206,7 @@ def export_pdf_with_overlays(
             single_page=page_number,
             page_width=page_width,
             page_height=page_height,
+            rotation=rotation,
         )
         
         # Sanitize project name for filename (replace spaces and special chars)

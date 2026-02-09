@@ -27,12 +27,14 @@ class CableConfigCreate(BaseModel):
     cable_type: str  # "BAU" or "FNAP"
     cable_size: int
     order: int
+    assigned_terminals: List[int] = []  # List of terminal marker_ids
 
 
 class CableConfigResponse(CableConfigCreate):
     """Cable config response."""
     id: int
     cable_config_id: int
+    assigned_terminals: List[int] = []  # List of terminal marker_ids
     created_at: datetime
     updated_at: datetime
 
